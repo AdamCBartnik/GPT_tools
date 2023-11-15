@@ -247,7 +247,11 @@ def gpt_plot_dist1d(pmd, var, plot_type='charge', units=None, fig_ax=None, table
                                                                                          subtract_mean=subtract_mean, weights=q)
     p_list, edges, density_norm = divide_particles(pmd, nbins=nbins, key=var)
     
-    if (var == 'r'):
+    is_radial_var = False
+    if (var == 'r' or var == 'r_centered' or var == 'rp'):
+        is_radial_var = True
+    
+    if (is_radial_var):
         density_norm = density_norm*(x_scale*x_scale)
     else:
         density_norm = density_norm*x_scale
@@ -274,7 +278,7 @@ def gpt_plot_dist1d(pmd, var, plot_type='charge', units=None, fig_ax=None, table
                 
     edges, hist = duplicate_points_for_hist_plot(edges, hist)
     
-    if (var != 'r'):
+    if (not is_radial_var):
         edges, hist = pad_data_with_zeros(edges, hist)
 
     line_list = fig_ax[1].plot(edges, hist, '-', color=cmap[0], label=f'{format_label(var)}')
@@ -359,9 +363,9 @@ def gpt_plot_dist2d(pmd, var1, var2, plot_type='histogram', units=None, fig=None
         pmd2 = pmd
             
     is_radial_var = [False, False]
-    if (var1 == 'r' or var1 == 'r_centered'):
+    if (var1 == 'r' or var1 == 'r_centered' or var1 == 'rp'):
         is_radial_var[0] = True
-    if (var2 == 'r' or var2 == 'r_centered'):
+    if (var2 == 'r' or var2 == 'r_centered' or var2 == 'rp'):
         is_radial_var[1] = True
         
     if('nbins' in params):

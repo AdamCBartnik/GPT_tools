@@ -48,7 +48,7 @@ class ParticleGroupExtension(ParticleGroup):
     @property
     def ptrans(self):
         return np.sqrt(self.px*self.px + self.py*self.py)
-        
+  
     @ptrans.setter
     def ptrans(self, pt_input):
         pt_ratio = pt_input/np.sqrt(self.px * self.px + self.py * self.py)
@@ -57,7 +57,7 @@ class ParticleGroupExtension(ParticleGroup):
         
     @property
     def rp(self):
-        return self.pr/self.pz 
+        return np.sqrt(self.px*self.px + self.py*self.py) / self.pz
     
     @property
     def pr_centered(self):
@@ -224,7 +224,11 @@ def divide_particles(particle_group, nbins = 100, key='t'):
     """
     x = getattr(particle_group, key) 
     
-    if (key == 'r'):
+    is_radial_var = False
+    if (key == 'r' or key == 'r_centered' or key == 'rp'):
+        is_radial_var = True
+    
+    if (is_radial_var):
         x = x*x
         xmin = 0  # force r=0 as min, could use min(x) here, optionally
         xmax = max(x)
@@ -238,7 +242,7 @@ def divide_particles(particle_group, nbins = 100, key='t'):
     
     which_bins = np.digitize(x, edges)-1
     
-    if (key == 'r'):
+    if (is_radial_var):
         x = np.sqrt(x)
         edges = np.sqrt(edges)
             
@@ -259,7 +263,7 @@ def divide_particles(particle_group, nbins = 100, key='t'):
         plist.append(p)
     
     # normalization for sums of particle properties, = 1 / histogram bin width
-    if (key == 'r'):
+    if (is_radial_var):
         density_norm = 1.0/(np.pi*(edges[1]**2 - edges[0]**2))
     else:
         density_norm = 1.0/(edges[1] - edges[0])

@@ -123,7 +123,8 @@ def multirun_gpt_with_particlegroup(settings=None,
                              auto_phase=False,
                              verbose=False,
                              gpt_verbose=False,
-                             asci2gdf_bin='$ASCI2GDF_BIN'
+                             asci2gdf_bin='$ASCI2GDF_BIN',
+                             kill_msgs=[]
                              ):
     """
     Run gpt with particles from ParticleGroup. 
@@ -152,7 +153,7 @@ def multirun_gpt_with_particlegroup(settings=None,
                 
     if ('restart_file' not in settings):
         # Make gpt and generator objects
-        G = GPT(gpt_bin=gpt_bin, input_file=gpt_input_file, initial_particles=input_particle_group, workdir=workdir, use_tempdir=use_tempdir, parse_layout=False)
+        G = GPT(gpt_bin=gpt_bin, input_file=gpt_input_file, initial_particles=input_particle_group, workdir=workdir, use_tempdir=use_tempdir, parse_layout=False, kill_msgs=kill_msgs)
         G.timeout=timeout
         G.verbose = verbose
 
@@ -262,7 +263,7 @@ def multirun_gpt_with_particlegroup(settings=None,
         clipping_radius = clipping_radius.to('m').magnitude
         restart_particles = take_range(restart_particles, 'r', 0, clipping_radius, make_copy=False)
             
-    G = GPT(gpt_bin=gpt_bin, input_file=gpt_input_file, initial_particles=restart_particles, workdir=workdir, use_tempdir=use_tempdir, parse_layout=False)
+    G = GPT(gpt_bin=gpt_bin, input_file=gpt_input_file, initial_particles=restart_particles, workdir=workdir, use_tempdir=use_tempdir, parse_layout=False, kill_msgs=kill_msgs)
     G.timeout = timeout
     G.verbose = verbose
 
@@ -403,7 +404,8 @@ def run_gpt_with_particlegroup(settings=None,
                              auto_phase=False,
                              verbose=False,
                              gpt_verbose=False,
-                             asci2gdf_bin='$ASCI2GDF_BIN'
+                             asci2gdf_bin='$ASCI2GDF_BIN',
+                             kill_msgs=[]
                              ):
     """
     Run gpt with particles from ParticleGroup. 
@@ -420,15 +422,23 @@ def run_gpt_with_particlegroup(settings=None,
                        use_tempdir=use_tempdir,
                        gpt_bin=gpt_bin, 
                        timeout=timeout, 
-                       verbose=verbose)
+                       verbose=verbose,
+                       kill_msgs=kill_msgs)
     
     if(verbose):
         print('Run GPT with ParticleGroup:') 
 
     unit_registry = UnitRegistry()
         
+    if ('ignore_gpt_warnings' not in settings):
+        settings['ignore_gpt_warnings'] = 0
+        
     # Make gpt and generator objects
-    G = GPT(gpt_bin=gpt_bin, input_file=gpt_input_file, initial_particles=input_particle_group, workdir=workdir, use_tempdir=use_tempdir, parse_layout=False)
+    if (settings['ignore_gpt_warnings'] == 1):
+        # Allow things like particles with gamma > 1, etc etc, that normally LUME would kill immediately
+        G = GPT(gpt_bin=gpt_bin, input_file=gpt_input_file, initial_particles=input_particle_group, workdir=workdir, use_tempdir=use_tempdir, parse_layout=False, kill_msgs=[])
+    else:
+        G = GPT(gpt_bin=gpt_bin, input_file=gpt_input_file, initial_particles=input_particle_group, workdir=workdir, use_tempdir=use_tempdir, parse_layout=False)
     G.timeout=timeout
     G.verbose = verbose
 
