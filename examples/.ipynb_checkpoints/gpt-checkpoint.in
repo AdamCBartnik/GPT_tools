@@ -1,0 +1,186 @@
+#**************************************************************************
+#**************************************************************************
+#          Electron Diffraction Setup
+#**************************************************************************
+#**************************************************************************
+
+#--------------------------------------------------------------------------
+# MACHINE SETTINGS
+#--------------------------------------------------------------------------
+
+gun_voltage=150;  # kV
+sol_1_current=0.0;
+sol_2_current=0.0;
+
+buncher_voltage=0; # kV
+buncher_phi_rel=-90.0;
+
+#--------------------------------------------------------------------------
+# BEAMLINE POSITIONS
+#--------------------------------------------------------------------------
+
+#Inventor distances 02/21/2020. Screen positions might have a 1 or 2 cm offset 
+
+z_sol = 0.326;
+screen1_z = 0.51984;
+buncher_z = 0.73243;
+z_sol_2 = 0.935;
+screen2_z = 1.18550;
+slit_1_z = 1.843; # 1.867
+deflector_z = 1.767;
+screen3_z  = 2.4;
+
+#--------------------------------------------------------------------------
+
+
+#--------------------------------------------------------------------------
+# SWITCHES
+#--------------------------------------------------------------------------
+space_charge = 1;
+space_charge_type = 1;
+viewscreens_on = 1;
+auto_phase = 0;
+#--------------------------------------------------------------------------
+
+#--------------------------------------------------------------------------
+# INITIAL CONDITIONS
+#--------------------------------------------------------------------------
+setfile("beam", "gpt_particles.gdf");
+#--------------------------------------------------------------------------
+
+
+#--------------------------------------------------------------------------
+# ACCURACY AND INTEGRATION PARAMETERS
+#--------------------------------------------------------------------------
+RadiusMax = 0.04;
+GBacc = 5.5;
+xacc  = 6.5;
+accuracy(GBacc, xacc);
+dtmin = 1e-16;
+dtmax = 20e-12;
+
+#--------------------------------------------------------------------------
+
+#--------------------------------------------------------------------------
+# BUNCHER PHASING PARAMETERS
+#--------------------------------------------------------------------------
+buncher_phi_0=146.99025431655224;
+buncher_phi=(buncher_phi_0 + buncher_phi_rel)*pi/180;
+buncher_gamma=1.0;
+#--------------------------------------------------------------------------
+
+#--------------------------------------------------------------------------
+# BEAMLINE DEFINITION
+#--------------------------------------------------------------------------
+# DC GUN
+
+# Anode aperture
+anode_diameter = 0.005;
+anode_z_position = 0.02;
+ehole("wcs", "z", anode_z_position,anode_diameter/2,-gun_voltage*1000/anode_z_position,0.0);
+
+# Add a constant field behind the gun to cancel the field from ehole.
+behind_gun_L = 1.0;
+ecyl("wcs", "z", -behind_gun_L*0.5, 10*anode_diameter, behind_gun_L, gun_voltage*1000/anode_z_position);
+
+# SOL1
+sol_R = 0.0294;
+sol_L = 0.0332;
+turns = 16855;
+
+sol_1_polarity = -1;
+bzsolenoid("wcs", "z", z_sol, sol_R, sol_L, turns*sol_1_current*sol_1_polarity);
+
+
+# BUNCHER
+Master_RF = 3.0e9;
+MaxECTB = 6.2250;  # [MV/m]
+UnitsECTB = 1.0/6.0459; # [MV/m / kV]
+ECTB01 = buncher_voltage / MaxECTB * UnitsECTB;
+
+if (buncher_voltage > 0) {
+    Map25D_TM("wcs", 0,0, buncher_z,  1,0,0, 0,1,0, "eindhoven_rf_4mm_center.gdf", "R", "Z", "Er", "Ez", "H", ECTB01, 0, buncher_phi, 2*pi*Master_RF);
+}
+
+
+# SOL2
+sol_2_polarity = 1;
+bzsolenoid("wcs", "z", z_sol_2, sol_R, sol_L, turns*sol_2_current*sol_2_polarity);
+
+
+#-----------------------------------------------------------------------
+# APERTURES
+#-----------------------------------------------------------------------
+
+beam_pipe_radius = 0.0127;  # 1" beampipe
+buncher_length = 0.14;
+buncher_radius = 0.00165;    # value from model is 0.00165, according to Will
+
+forwardscatter("wcs","I","remove",0);
+
+# Anode
+scatteriris("wcs", "z", anode_z_position, anode_diameter/2, beam_pipe_radius) scatter="remove";    
+
+# Buncher
+scatteriris("wcs", "z", buncher_z - 0.5*buncher_length, buncher_radius,             beam_pipe_radius) scatter="remove";
+scatterpipe("wcs", "I", buncher_z - 0.5*buncher_length, buncher_z + 0.5*buncher_length,buncher_radius)   scatter="remove";
+scatteriris("wcs", "z", buncher_z + 0.5*buncher_length, buncher_radius,             beam_pipe_radius) scatter="remove";
+
+
+#--------------------------------------------------------------------------
+# Spacecharge Parameters
+#--------------------------------------------------------------------------
+Alpha  = 1.0;   # 1.0    (manual default is 1.0), (bigger is better)
+Fn     = 0.5;    # 0.5   (manual default is 0.5), (smaller is better)
+verror = 0.005; # 0.005  (manual default is 0.01), (smaller is better)
+Nstd   = 5;    # 5     (manual default is 5), (bigger is better)
+
+tree_code_theta = 1.0;
+tree_code_R = 1.0e-6;
+
+if (space_charge == 1) {
+    if (space_charge_type == 1) {
+        spacecharge3Dmesh("Cathode", "MeshNfac", Alpha, "MeshAdapt", Fn, "SolverAcc", verror, "MeshBoxSize", Nstd);
+    }
+    if (space_charge_type == 2) {
+        setrmacrodist("beam","u",tree_code_R,0) ;
+        spacecharge3Dtree(tree_code_theta) ;
+    }
+}
+
+
+#--------------------------------------------------------------------------
+# OUTPUT PARAMETERS
+#--------------------------------------------------------------------------
+
+tmax = 2e-8;
+
+ZSTART = -0.005;
+ZSTOP = screen3_z + 0.01; 
+zminmax("wcs","I",ZSTART,ZSTOP);
+
+if (auto_phase == 0) {
+    screen("wcs","I", 1e-6); # After Cathode
+    screen("wcs", "I", screen1_z); # Screen 1
+    screen("wcs", "I", screen2_z); # Screen 2
+    screen("wcs", "I", screen3_z); # Screen 3
+    screen("wcs", "I", slit_1_z); # Sample Aperture
+    
+    n_screens = 50;
+    if (n_screens > 1) {
+        dz_screen = ZSTOP/(n_screens-1);
+        screen("wcs", "I", dz_screen, ZSTOP, dz_screen);
+    }
+} else {
+  screen("wcs","I", screen3_z);  # phasing screen
+}
+
+#--------------------------------------------------------------------------
+# PHASING DEFINITIONS
+#--------------------------------------------------------------------------
+
+phasing_amplitude_0 = buncher_voltage;
+phasing_on_crest_0 = buncher_phi_0;
+phasing_relative_0 = buncher_phi_rel;
+phasing_gamma_0 = buncher_gamma;
+
