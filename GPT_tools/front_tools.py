@@ -141,12 +141,15 @@ def show_fronts(pop_number, obj1_key, obj2_key, obj3_key=None,
         )
 
     def on_click(event):
-        ind = np.argmin(np.abs(obj1 - snap_cursor.pos[0]))
+        
+        ind = np.nanargmin((obj1 - snap_cursor.pos[0])**2 + (obj2 - snap_cursor.pos[1])**2)
         settings = pop.to_dict('index')[pop_index[ind]]
+        obj1_val = settings[obj1_key] * obj1_scale
+        obj2_val = settings[obj2_key] * obj2_scale
         if (xopt_yaml is not None):
             wanted_keys = {**xopt_yaml['vocs']['variables'], **xopt_yaml['vocs']['constants']}.keys()
             settings = dict((k, settings[k]) for k in wanted_keys if k in settings)
-        settings_box.value = f'index = {ind}\n{obj1_key} = {snap_cursor.pos[0]:.7g}\n{obj2_key} = {snap_cursor.pos[1]:.7g}\n\nsettings = {settings}'
+        settings_box.value = f'index = {ind}\n{obj1_key} = {obj1_val:.7g}\n{obj2_key} = {obj2_val:.7g}\n\nsettings = {settings}'
         
     if (return_data):
         return output_data
