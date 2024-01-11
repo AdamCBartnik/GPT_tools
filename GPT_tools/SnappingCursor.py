@@ -22,6 +22,7 @@ class SnappingCursor:
         self.circ = plt.Rectangle((np.nan,np.nan), 0.1, 0.1, facecolor='white', edgecolor='r', alpha = 0.5)
         self.ax.add_patch(self.circ)
         self.screen_size = ax.get_figure().get_size_inches()
+        self.pos = [0, 0]
         
     def set_visible(self, visible):
         self.text.set_visible(visible)
@@ -73,3 +74,5 @@ class SnappingCursor:
             self.text.set_position((xt,yt))
             self.text.set_text(f'({x:.3g}, {y:.3g})')
             self.text.set_bbox(dict(edgecolor=self.line_colors[which_line], facecolor=self.line_colors[which_line], alpha=0.7))
+
+            self.pos = [x, y]

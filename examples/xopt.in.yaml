@@ -1,0 +1,83 @@
+xopt:
+    max_evaluations: 500000   # 1000*500
+generator:
+    name: cnsga
+    population_size: 62
+    output_path: /nfs/acc/user/acb20/opt/gpt/ncrf/tmp/
+    population_file: /nfs/acc/user/acb20/opt/gpt/ncrf/tmp/pop_80_fixed.csv
+
+evaluator:
+    function: GPT_tools.GPTExtension.evaluate_run_gpt_with_particlegroup  # evaluate_gpt_with_stability, evaluate_run_gpt_with_particlegroup
+    function_kwargs:
+        distgen_input_file: /nfs/acc/user/acb20/opt/gpt/templates/cold_ncrf_gun/distgen-pzfix-old.in.yaml
+        gpt_input_file: /nfs/acc/user/acb20/opt/gpt/templates/cold_ncrf_gun/gpt-buncher.in
+        verbose: false
+        auto_phase: True
+        timeout: 100000
+  
+vocs: 
+  variables: 
+    # Distgen
+    r_dist:n_sigma_cutoff:value:           [0.1  ,   2]      # [units of sigma]
+    t_dist:n_sigma_cutoff:value:           [0.0  ,   2]      # [units of sigma]
+    transforms:t2:sigma_xy:value:          [0.01,  1.0]      # [mm] 
+    t_dist:sigma_t:value:                  [0.75 ,   3]      # [ps]
+    transforms:t3:sigma_t:value:           [0.75 ,   3]      # [ps]
+    
+    # GPT
+    GUNSOLNEW:              [50.,    190.]   # [God knows]
+    GUNSOLNEW2:             [50.,    190.]   # [God knows]
+    gun_phi_relative:       [-35.,    20.]   # [deg.]   
+    PC0:                    [0,       79.5]   # [God knows]
+    phiC0_relative:         [-90.,    -45.]   # [deg.]
+
+
+  constants:
+    # Distgen
+    transforms:t2:sigma_xy:units: 'mm'
+    transforms:t3:sigma_t:units: 'ps'
+    
+    total_charge:value:    100
+    total_charge:units:    'pC'
+    
+    n_particle:            100000
+    
+    start:MTE:value:       5
+    start:MTE:units:       'meV'
+    
+    #final_charge:value:    100.0
+    #final_charge:units:    'pC'
+        
+    # GPT
+    dz_sol_buncher:      0.425
+    dz_sol_linac:        0.3
+    PC1:                 79.5
+    PC2:                 79.5
+    GBacc:               5.5
+    xacc:                6.0
+    phiC1_relative:      0
+    phiC2_relative:      0
+    n_screens:           10   
+     
+    just_cathode:        0
+    just_gun:            0
+ 
+    # GPT
+    space_charge:  1 # []
+    apertures_on:  0 # []
+ 
+  objectives:
+    end_sigma_t:       MINIMIZE     # [s]
+    end_norm_emit_x:   MINIMIZE     # [m] 
+
+  constraints:
+    end_n_particle_loss:      [LESS_THAN,          50]
+#    end_mean_kinetic_energy:  [GREATER_THAN, 150000000]  # [eV]
+#    end_sigma_kinetic_energy: [LESS_THAN,      1000000]  # [eV]
+#    end_sigma_t:              [GREATER_THAN, 0.000000000001]  # [s]
+#    end_norm_emit_x:          [LESS_THAN,     0.000000100]  # [m]
+#    end_n_particle_loss:      [LESS_THAN,          250]
+#    end_sigma_t:              [LESS_THAN,    0.000000000002]  # [s]
+#    end_total_charge:         [GREATER_THAN, 0.000000000050]  # [C]
+#    end_total_charge:         [LESS_THAN,    0.000000000150]  # [C]
+

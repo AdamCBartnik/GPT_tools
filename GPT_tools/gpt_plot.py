@@ -9,6 +9,7 @@ from .ParticleGroupExtension import ParticleGroupExtension, convert_gpt_data, di
 from ipywidgets import HBox
 from GPT_tools.SnappingCursor import SnappingCursor
 import pandas as pd
+import random
 
 def gpt_plot(gpt_data_input, var1, var2, units=None, fig_ax=None, format_input_data=True, show_survivors_at_z=None, show_survivors_after_z=None, 
              show_screens=True, show_cursor=True, return_data=False, legend=True, **params):
@@ -41,7 +42,7 @@ def gpt_plot(gpt_data_input, var1, var2, units=None, fig_ax=None, format_input_d
             survivor_params['need_copy'] = False
             for i, s in enumerate(gpt_data.particles):
                 gpt_data.particles[i] = postprocess_screen(s, **survivor_params)
-        
+    
     if (fig_ax==None):
         show_plot = True
         if (legend):
@@ -68,13 +69,6 @@ def gpt_plot(gpt_data_input, var1, var2, units=None, fig_ax=None, format_input_d
         
     if (not isinstance(var2, list)):
         var2 = [var2]
-
-    if ('n_slices' in params):
-        for p in gpt_data.particles:
-            p.n_slices = params['n_slices']
-    if ('slice_key' in params):
-        for p in gpt_data.particles:
-            p.slice_key = params['slice_key']
         
     # Combine all y data into single array to find good units
     all_y = np.array([])
@@ -501,26 +495,33 @@ def gpt_plot_dist2d(pmd, var1, var2, plot_type='histogram', units=None, fig=None
 
 
 
-def gpt_plot_trajectory(gpt_data_input, var1, var2, fig=None, format_input_data=True, **params):
+def gpt_plot_trajectory(gpt_data_input, var1, var2, fig_ax=None, format_input_data=True, nlines=None, show_survivors_at_z=None, **params):
     if (format_input_data):
         gpt_data = convert_gpt_data(gpt_data_input)
     else:
         gpt_data = copy.deepcopy(gpt_data_input)
+    
+    if (fig_ax==None):
+        show_plot = True
+        fig_ax = make_default_plot(plot_width=600, plot_height=400, **params)
+    else:
+        show_plot = False
+        fig_ax[0].set_size_inches(600/fig_ax[0].dpi, 400/fig_ax[0].dpi)
+
+    plot_ids = gpt_data_input.screen[0].id
         
-    fig = make_default_plot(fig, plot_width=500, plot_height=400, **params)
-        
-    # Get set of particle IDs to plot trajectories of
-    pmd, _, _ = get_screen_data(gpt_data_input, **params)
-    pmd = postprocess_screen(pmd, **params)
-    plot_ids = pmd.id[pmd.weight > 0]
+    if (show_survivors_at_z is not None):
+        survivor_params = copy.copy(params)
+        survivor_params['screen_z'] = show_survivors_at_z
+        pmd, _, _ = get_screen_data(gpt_data, **survivor_params)
+        pmd = postprocess_screen(pmd, **params)
+        plot_ids = pmd.id[pmd.weight > 0]
+
+    if ('include_ids' in params):
+        plot_ids = params['include_ids']
     
     if(len(plot_ids)==0):
         return None
-
-    charge_base_units = pmd.units('charge').unitSymbol
-    q_total, charge_scale, charge_prefix = nicer_array(pmd.charge)
-    q = pmd.weight / charge_scale
-    q_units = check_mu(charge_prefix)+charge_base_units
     
     x = np.empty( (len(gpt_data.screen),len(plot_ids)) )
     y = np.empty( (len(gpt_data.screen),len(plot_ids)) )
@@ -541,28 +542,29 @@ def gpt_plot_trajectory(gpt_data_input, var1, var2, fig=None, format_input_data=
             
     all_x = x.flatten()
     all_x = all_x[np.logical_not(np.isnan(all_x))]
-    (_, x_units, x_scale, _, _, _) = scale_mean_and_get_units(all_x, pmd.units(var1).unitSymbol, subtract_mean=False)
+    (_, x_units, x_scale, _, _, _) = scale_mean_and_get_units(all_x, gpt_data_input.units(var1).unitSymbol, subtract_mean=False)
     x = x/x_scale
     
     all_y = y.flatten()
     all_y = all_y[np.logical_not(np.isnan(all_y))]
-    (_, y_units, y_scale, _, _, _) = scale_mean_and_get_units(all_y, pmd.units(var2).unitSymbol, subtract_mean=False)
+    (_, y_units, y_scale, _, _, _) = scale_mean_and_get_units(all_y, gpt_data_input.units(var2).unitSymbol, subtract_mean=False)
     y = y/y_scale
     
-    for j, id in enumerate(plot_ids):
-        fig.add_trace(go.Scattergl(x=x[:,j], y=y[:,j], mode='lines',
-                    hoverinfo="none"   # hovertemplate = '%{x}, %{y}<extra></extra>',
-                 ))
-        
-    fig.update_layout(font=dict(size=16), font_family="Arial")
-    fig.update_layout(showlegend=False)
-    fig.update_xaxes(title_text=f"{format_label(var1)} ({x_units})")
-    fig.update_yaxes(title_text=f"{format_label(var2)} ({y_units})")    
+    index_to_plot = np.arange(0,len(plot_ids)).tolist()
+    if nlines is not None:
+        if (nlines < len(plot_ids)):
+            index_to_plot = random.sample(index_to_plot, nlines)
+    for j in index_to_plot:
+        fig_ax[1].plot(x[:,j], y[:,j], '-')
+                
+    fig_ax[1].set_xlabel(f"{format_label(var1, use_base=True)} ({x_units})")
+    fig_ax[1].set_ylabel(f"{format_label(var2, use_base=True)} ({y_units})")
     
     if ('xlim' in params):
-        fig.update_xaxes(range=params['xlim'])
+        fig_ax[1].set_xlim(params['xlim'])
     if ('ylim' in params):
-        fig.update_yaxes(range=params['ylim'])
-    
-    return fig
+        fig_ax[1].set_ylim(params['xlim'])
+            
+    if (show_plot):
+        return HBox([fig_ax[0].canvas], layout=widgets.Layout(width='800px'))
     

@@ -9,13 +9,29 @@ from xopt.generators.ga.cnsga import cnsga_toolbox, pop_from_data
 from xopt import Xopt
 import multiprocessing as mp     
 from concurrent.futures import ProcessPoolExecutor
+from GPT_tools.SnappingCursor import SnappingCursor
+from .tools import make_default_plot
+import ipywidgets as widgets
 
-def show_fronts(pop_number, pop_path, obj1_key, obj2_key, obj3_key=None, xopt_file=None, xscale=1.0, yscale=1.0, zscale=1.0, show_constraint_violators=False, 
-                new_fig=True, xlim=None, ylim=None, zlim=None, dpi=100, best_N=None, legend='on', colorbar=True, 
-                xlabel=None, ylabel=None, zlabel=None, return_fig=False, return_data = False, legend_color=None, dot_style='o', zorder=1):
+def show_fronts(pop_number, obj1_key, obj2_key, obj3_key=None, 
+                pop_path='.', xopt_file=None, 
+                xscale=1.0, yscale=1.0, zscale=1.0, 
+                xlim=None, ylim=None, zlim=None, 
+                xlabel=None, ylabel=None, zlabel=None, 
+                show_constraint_violators=False, legend_color=None, dot_style='o', 
+                new_fig=True, dpi=100, best_N=None, legend='on', colorbar=True, 
+                return_fig=False, return_data = False, zorder=1, show_settings = False):
     
     if (new_fig and return_data == False):
-        fig = plt.figure(dpi=dpi)
+        if (obj3_key is None):
+            plot_width = 500
+        else:
+            plot_width = 600
+        fig_ax = make_default_plot(plot_width=plot_width, plot_height=400, dpi = dpi)
+        
+    if (not new_fig):
+        fig_ax = [plt.gcf(), plt.gca()]
+        show_settings = False
         
     if (xopt_file is None):
         xopt_file = get_xopt_file(pop_path)
@@ -26,14 +42,16 @@ def show_fronts(pop_number, pop_path, obj1_key, obj2_key, obj3_key=None, xopt_fi
         obj3_scale = zscale
     
     pop, pop_number, pop_filename = get_pop(pop_path, pop_number, xopt_file, show_constraint_violators=show_constraint_violators, best_N=best_N)
+    pop_index = np.array(pop.index)
+    
+    xopt_yaml = None
+    if(isinstance(xopt_file, str)):
+        with open(xopt_file, 'r') as fid:
+            xopt_yaml =  yaml.safe_load(fid)       
         
     obj1 = np.array(pop[obj1_key]) * obj1_scale 
     obj2 = np.array(pop[obj2_key]) * obj2_scale
         
-    if (obj3_key is not None):
-        #obj3_key = fix_key(obj3_key, pop, pop_filename)   
-        obj3 = np.array(pop[obj3_key]) * obj3_scale
-
     if (xlim is not None):
         obj1[obj1<xlim[0]] = np.nan
         obj1[obj1>xlim[1]] = np.nan
@@ -41,10 +59,14 @@ def show_fronts(pop_number, pop_path, obj1_key, obj2_key, obj3_key=None, xopt_fi
     if (ylim is not None):
         obj1[obj2<ylim[0]] = np.nan
         obj1[obj2>ylim[1]] = np.nan
-
-    if (zlim is not None):
-        obj1[obj3<zlim[0]] = np.nan
-        obj1[obj3>zlim[1]] = np.nan
+        
+    if (obj3_key is not None):
+        #obj3_key = fix_key(obj3_key, pop, pop_filename)
+        obj3 = np.array(pop[obj3_key]) * obj3_scale
+        
+        if (zlim is not None):
+            obj1[obj3<zlim[0]] = np.nan
+            obj1[obj3>zlim[1]] = np.nan
 
     not_nan = np.logical_not(np.isnan(obj1))
 
@@ -56,7 +78,7 @@ def show_fronts(pop_number, pop_path, obj1_key, obj2_key, obj3_key=None, xopt_fi
     else:
         if (obj3_key is not None):
             if (zlim is not None):
-                sc = plt.scatter(obj1[not_nan], obj2[not_nan], 10, c=obj3[not_nan], cmap='jet', vmin=zlim[0], vmax=zlim[1], marker=dot_style, zorder=zorder)
+                sc = fig_ax[1].scatter(obj1[not_nan], obj2[not_nan], 10, c=obj3[not_nan], cmap='jet', vmin=zlim[0], vmax=zlim[1], marker=dot_style, zorder=zorder)
                 if (legend_color is None):
                     cmap = cm.get_cmap('jet')
                     #legend_color = cmap(np.median(obj3[not_nan]))
@@ -72,24 +94,24 @@ def show_fronts(pop_number, pop_path, obj1_key, obj2_key, obj3_key=None, xopt_fi
                 else:
                     cbar.set_label(zlabel)
         else:
-            line_handle, = plt.plot(obj1[not_nan], obj2[not_nan], dot_style, zorder=zorder)
+            line_handle, = fig_ax[1].plot(obj1[not_nan], obj2[not_nan], dot_style, zorder=zorder)
             p_list.append(line_handle)
             leg_list.append(f'Pop {pop_number}')
 
     if (return_data == False):
         if (xlim is not None):
-            plt.xlim(xlim)
+            fig_ax[1].set_xlim(xlim)
         if (ylim is not None):
-            plt.ylim(ylim)
+            fig_ax[1].set_ylim(ylim)
 
         if (xlabel is None):
-            plt.xlabel(f'{obj1_key}')
+            fig_ax[1].set_xlabel(f'{obj1_key}')
         else:
-            plt.xlabel(xlabel)
+            fig_ax[1].set_xlabel(xlabel)
         if (ylabel is None):
-            plt.ylabel(f'{obj2_key}')
+            fig_ax[1].set_ylabel(f'{obj2_key}')
         else:
-            plt.ylabel(ylabel)
+            fig_ax[1].set_ylabel(ylabel)
         if (legend_color is not None and legend is not None):
             line_handle, = plt.plot([], [], dot_style, color=legend_color)
             line_handle.set_label(legend)
@@ -109,15 +131,41 @@ def show_fronts(pop_number, pop_path, obj1_key, obj2_key, obj3_key=None, xopt_fi
                         p.set_label(legend[ii])
             if (any([p is not None for p in p_list])):
                 plt.legend()
-                
-    if (return_fig):
-        return fig
-    
+
+    settings_box = widgets.Textarea(
+            value='Click a point to see settings',
+            placeholder='',
+            description='',
+            disabled=False, 
+            layout=widgets.Layout(width='500px',height='400px')
+        )
+
+    def on_click(event):
+        ind = np.argmin(np.abs(obj1 - snap_cursor.pos[0]))
+        settings = pop.to_dict('index')[pop_index[ind]]
+        if (xopt_yaml is not None):
+            wanted_keys = {**xopt_yaml['vocs']['variables'], **xopt_yaml['vocs']['constants']}.keys()
+            settings = dict((k, settings[k]) for k in wanted_keys if k in settings)
+        settings_box.value = f'index = {ind}\n{obj1_key} = {snap_cursor.pos[0]:.7g}\n{obj2_key} = {snap_cursor.pos[1]:.7g}\n\nsettings = {settings}'
+        
     if (return_data):
         return output_data
 
+    if (show_settings):
+        snap_cursor = SnappingCursor(fig_ax[0], fig_ax[1], p_list)
+        fig_ax[0].canvas.mpl_connect('motion_notify_event', snap_cursor.on_mouse_move)
+        fig_ax[0].canvas.mpl_connect('button_press_event', on_click)
+        fig_ax[0].snap_cursor = snap_cursor # HACK: keep reference to cursor in figure so that garbage collection doesn't kill it
+        
+        return widgets.HBox([fig_ax[0].canvas, widgets.HBox([], layout=widgets.Layout(width='20px',height='30px')), settings_box], layout=widgets.Layout(width='1100px'))
+
+    return fig_ax[0].canvas
+    
+    
+    
+
 def fix_xopt_pop_datafile(filename):
-    pdf = pd.read_csv(os.path.join(template_dir, '../LANL/ued/tmp', fname), index_col = "xopt_index")
+    pdf = pd.read_csv(filename, index_col = "xopt_index")
     good_row = pdf[pdf["xopt_error"] == False].iloc[0]
     bad_row_numbers = np.array(pdf[pdf["xopt_error"] == True].index)
     for ii in bad_row_numbers:
@@ -333,10 +381,16 @@ def color_all_settings(pop_number, pop_path, xopt_file=None, obj1_key = 'end_sig
     if (obj2_key in all_items):
         all_items.remove(obj2_key)
         
+    vbox = widgets.VBox()
+    
     for key in all_items: 
         if (np.all([isinstance(xx, Number) for xx in pop[key]])):
             if (np.std(pop[key]) > 0):
-                show_fronts(pop_number, pop_path, obj1_key, obj2_key, obj3_key=key, xlim=xlim, ylim=ylim, xscale=xscale, yscale=yscale, show_constraint_violators=show_constraint_violators)
+                p = show_fronts(pop_number, obj1_key, obj2_key, pop_path=pop_path, obj3_key=key, xopt_file=xopt_file, 
+                            xlim=xlim, ylim=ylim, xscale=xscale, yscale=yscale, show_constraint_violators=show_constraint_violators, show_settings = False)
+                vbox.children += (p, )
+    
+    return vbox
     
 
 def get_xopt_file(pop_path):
