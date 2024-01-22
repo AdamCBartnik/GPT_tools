@@ -4,6 +4,7 @@ import re
 from gpt import GPT
 from gpt.gpt_phasing import gpt_phasing
 from .ParticleGroupExtension import ParticleGroupExtension
+from pmd_beamphysics import ParticleGroup
 from distgen import Generator
 from distgen.writers import write_gpt
 from .tools import get_screen_data
