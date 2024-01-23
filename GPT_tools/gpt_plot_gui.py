@@ -1,5 +1,4 @@
 import numpy as np
-import plotly.graph_objects as go
 from .gpt_plot import *
 from .tools import special_screens
 from .ParticleGroupExtension import convert_gpt_data
