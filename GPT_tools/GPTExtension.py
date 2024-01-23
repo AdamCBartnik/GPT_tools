@@ -40,7 +40,7 @@ def default_gpt_merit(G):
         error_output = default_gpt_merit(GG)
         
         # Replace all values with Ivan's favorite error number
-        for k in output.keys():
+        for k in error_output.keys():
             if (isinstance(error_output[k], numbers.Number)  and not isinstance(error_output[k], bool)):
                 error_output[k] = 1.0e88
         
