@@ -5,7 +5,8 @@ import pandas as pd
 import numpy as np
 from GPT_tools.SnappingCursor import SnappingCursor
 import time
-
+from GPT_tools.GPTExtension import run_gpt_with_settings
+from fastnumbers import isfloat
 
 class front_gui:
     def __init__(self, xopt_file, pop_directory):
@@ -14,6 +15,7 @@ class front_gui:
         self.color_dict = {}
         self.default_legend_dict = {}
         self.legend_dict = {}
+        self.gpt_data = None
         
         self.xopt_file = xopt_file
         self.pop_directory = pop_directory
@@ -31,6 +33,9 @@ class front_gui:
         
         self.params_from_xopt = obj + vars + cons
 
+        self.distgen_input_file = self.xopt_file['evaluator']['function_kwargs']['distgen_input_file']
+        self.gpt_input_file = self.xopt_file['evaluator']['function_kwargs']['gpt_input_file']
+        
         file_list = glob.glob(os.path.join(self.pop_directory, '*.csv'))
         file_list.sort(key=lambda x: os.path.getmtime(x))
         file_list.reverse()
@@ -75,6 +80,20 @@ class front_gui:
         self.legend_checkbox = widgets.Checkbox(value=False,description='Legend: ',disabled=False,indent=False, layout=widgets.Layout(width='70px', height='30px'))
         self.legend_str = widgets.Text(value='',placeholder='Legend name',description='',disabled=False, layout=widgets.Layout(width='110px', height='30px'))
         
+        self.show_constraint_violators_checkbox = widgets.Checkbox(value=False,description='Show Constraint Violators',disabled=False,indent=False, layout=widgets.Layout(width='250px', height='30px'))
+        data_filtering_hbox = widgets.HBox()
+        data_filtering_hbox.children += (self.show_constraint_violators_checkbox, )
+        
+        self.run_gpt_button = widgets.Button(description='Run Settings', disabled=True, button_style='', tooltip='Click me', icon='')
+        self.run_gpt_button.on_click(self.run_gpt)
+        self.settings_menu = widgets.Dropdown(disabled=True, layout=widgets.Layout(width='150px', height='30px'))
+        self.settings_value = widgets.Text(value='',placeholder='',disabled=True,layout=widgets.Layout(width='110px',height='30px'))
+        
+        gpt_run_hbox = widgets.HBox()
+        gpt_run_hbox.children += (self.run_gpt_button, )
+        gpt_run_hbox.children += (self.settings_menu, )
+        gpt_run_hbox.children += (self.settings_value, )
+        
         active_file_hbox = widgets.HBox()
         active_file_hbox.children += (self.active_file, )
         active_file_hbox.children += (self.active_color, )
@@ -84,6 +103,8 @@ class front_gui:
         file_vbox.children += (widgets.Label('Select files (hold Ctrl for multiple)'), )
         file_vbox.children += (self.file_select, )
         file_vbox.children += (active_file_hbox, )
+        file_vbox.children += (data_filtering_hbox, )
+        file_vbox.children += (gpt_run_hbox, )
         
         self.x_select = widgets.Dropdown(options=['Temp'],value='Temp',description='x :',disabled=False,layout=widgets.Layout(width='250px',height='30px'))
         self.y_select = widgets.Dropdown(options=['Temp'],value='Temp',description='y :',disabled=False,layout=widgets.Layout(width='250px',height='30px'))
@@ -147,7 +168,7 @@ class front_gui:
         var_select_vbox.children += (c_scale_hbox, )
         var_select_vbox.children += (self.c_label, )
         var_select_vbox.children += (c_limits_hbox, )
-
+        
         input_hbox.children += (file_vbox, )
         input_hbox.children += (var_select_vbox, )
 
@@ -164,6 +185,8 @@ class front_gui:
 
         self.pop_list = []
         self.settings = {}
+        self.run_settings = {}
+        self.ran_settings = {}
         
         self.dummy = 0
         
@@ -194,11 +217,15 @@ class front_gui:
         self.c_min.observe(self.plot_on_value_change, names='value')
         self.c_max.observe(self.plot_on_value_change, names='value')
         self.legend_checkbox.observe(self.plot_on_value_change, names='value')
+        self.show_constraint_violators_checkbox.observe(self.plot_on_value_change, names='value')
         
         self.active_file.observe(self.active_file_change, names='value')
         
         self.active_color.observe(self.active_color_change, names='value')
         self.legend_str.observe(self.legend_str_change, names='value')
+        
+        self.settings_menu.observe(self.show_settings, names='value')
+        self.settings_value.observe(self.edit_settings_to_run, names = 'value')
         
     def on_click(self, event):
                 
@@ -206,6 +233,9 @@ class front_gui:
         which_point = self.snap_cursor.data_index
         
         pop = self.pop_list[which_line]
+        if (not self.show_constraint_violators_checkbox.value):
+            pop = self.remove_constraint_violators(copy.copy(pop))
+        
         pop_index = np.array(pop.index)
             
         all_settings = pop.to_dict('index')[pop_index[which_point]]
@@ -215,6 +245,13 @@ class front_gui:
         wanted_keys = {**self.xopt_file['vocs']['variables'], **self.xopt_file['vocs']['constants']}.keys()
         self.settings = dict((k, all_settings[k]) for k in wanted_keys if k in all_settings)
         self.settings_box.value = f'index = {pop_index[which_point]} in {pop_filename}\n{self.x_select.value} = {all_settings[self.x_select.value]:.7g}\n{self.y_select.value} = {all_settings[self.y_select.value]:.7g}\nsettings = {self.settings}'
+        self.run_gpt_button.disabled = False
+        self.settings_menu.disabled = False
+        self.settings_value.disabled = False
+        
+        self.settings_menu.options = self.settings.keys()
+        self.settings_value.value = str(self.settings[self.settings_menu.value])
+        self.run_settings = copy.copy(self.settings)
     
     def reset_units(self, owner):
         if (owner == self.x_select):
@@ -231,6 +268,7 @@ class front_gui:
             self.c_scale.value = '0'
             self.c_units.value = ''
             self.c_label.value = ''
+    
     
     def next_default_color(self):
         c = self.default_color_list[0]
@@ -259,11 +297,27 @@ class front_gui:
         
         self.active_color.observe(self.active_color_change, names='value')
         self.legend_str.observe(self.legend_str_change, names='value')
-    
+
+    def remove_constraint_violators(self, pop_df):
+        # Remove individuals that threw an error       
+        pop_df = pop_df[pop_df['xopt_error']!=True] 
+
+        for c, v in self.xopt_file['vocs']['constraints'].items():
+            bin_opr, bound = v[0], v[1]
+            bound = float(bound)
+
+            if(bin_opr=='LESS_THAN'):
+                pop_df = pop_df[pop_df[c]<bound]
+            elif(bin_opr=='GREATER_THAN'):
+                pop_df = pop_df[pop_df[c]>bound]
+
+        return pop_df
+        
     def load_files(self):
         pop_filenames = list(self.file_select.value)
         
         self.pop_list = []
+        self.filtered_pop_list = []
         
         old_x = self.x_select.value
         old_y = self.y_select.value
@@ -271,7 +325,8 @@ class front_gui:
         
         for f in pop_filenames:
             print(os.path.join(self.pop_directory, f))
-            self.pop_list += [pd.read_csv(os.path.join(self.pop_directory, f), index_col="xopt_index")]
+            new_pop = pd.read_csv(os.path.join(self.pop_directory, f), index_col="xopt_index")            
+            self.pop_list += [new_pop]
         
         dropdown_items = self.params_from_xopt
         for pop in self.pop_list:
@@ -329,6 +384,9 @@ class front_gui:
             
         for ii, pop in enumerate(self.pop_list):
             pop_filename = pop_filenames[ii]
+            
+            if (not self.show_constraint_violators_checkbox.value):
+                pop = self.remove_constraint_violators(copy.copy(pop))
             
             x = pop[self.x_select.value] * 10**(-float(self.x_scale.value))
             y = pop[self.y_select.value] * 10**(-float(self.y_scale.value))
@@ -428,3 +486,28 @@ class front_gui:
     def legend_str_change(self, change):
         self.legend_dict[self.active_file.value] = self.legend_str.value
         self.make_plot()
+        
+    def run_gpt(self, click):
+        self.settings_box.value = 'Running...'
+        self.gpt_data = run_gpt_with_settings(copy.copy(self.run_settings),
+                                 gpt_input_file=self.gpt_input_file,
+                                 distgen_input_file=self.distgen_input_file,
+                                 verbose=False,
+                                 gpt_verbose=False,
+                                 auto_phase=False,
+                                 timeout=100000)
+        self.ran_settings = copy.copy(self.gpt_data.input['variables'])
+        self.settings_box.value = 'Finished running.'
+
+        
+    def show_settings(self, change):
+        self.settings_value.value = str(self.settings[self.settings_menu.value])
+        
+    def edit_settings_to_run(self, change):
+        if isfloat(self.settings[self.settings_menu.value]):
+            if isfloat(self.settings_value.value):
+                self.run_settings[self.settings_menu.value] = float(self.settings_value.value)
+        else:
+            self.run_settings[self.settings_menu.value] = self.settings_value.value
+            
+        #self.settings_box.value = f'run settings = {self.run_settings}'
