@@ -7,6 +7,8 @@ from GPT_tools.SnappingCursor import SnappingCursor
 import time
 from GPT_tools.GPTExtension import run_gpt_with_settings
 from fastnumbers import isfloat
+from xopt.generators.ga.cnsga import cnsga_toolbox, pop_from_data
+from xopt import Xopt
 
 class front_gui:
     def __init__(self, xopt_file, pop_directory):
@@ -17,14 +19,14 @@ class front_gui:
         self.legend_dict = {}
         self.gpt_data = None
         
-        self.xopt_file = xopt_file
+        self.xopt_filename = xopt_file
         self.pop_directory = pop_directory
         self.colorbar_instance = None
         
         self.mouse_event_handler_1 = None
         self.mouse_event_handler_2 = None
 
-        with open(self.xopt_file, 'r') as fid:
+        with open(self.xopt_filename, 'r') as fid:
             self.xopt_file =  yaml.safe_load(fid)     
 
         obj = list(self.xopt_file['vocs']['objectives'].keys())
@@ -36,15 +38,8 @@ class front_gui:
         self.distgen_input_file = self.xopt_file['evaluator']['function_kwargs']['distgen_input_file']
         self.gpt_input_file = self.xopt_file['evaluator']['function_kwargs']['gpt_input_file']
         
-        file_list = glob.glob(os.path.join(self.pop_directory, '*.csv'))
-        file_list.sort(key=lambda x: os.path.getmtime(x))
-        file_list.reverse()
-        
-        file_list = [os.path.basename(ff) for ff in file_list]
-        for ii,ff in enumerate(file_list):
-            self.default_legend_dict[ff] = f'file {ii+1}'
-            self.legend_dict[ff] = ''
-                    
+        file_list = self.make_file_list()
+                            
         # Outermost container object
         self.gui = widgets.VBox(layout={'border': '1px solid grey'})
 
@@ -80,7 +75,7 @@ class front_gui:
         self.legend_checkbox = widgets.Checkbox(value=False,description='Legend: ',disabled=False,indent=False, layout=widgets.Layout(width='70px', height='30px'))
         self.legend_str = widgets.Text(value='',placeholder='Legend name',description='',disabled=False, layout=widgets.Layout(width='110px', height='30px'))
         
-        self.show_constraint_violators_checkbox = widgets.Checkbox(value=False,description='Show Constraint Violators',disabled=False,indent=False, layout=widgets.Layout(width='250px', height='30px'))
+        self.show_constraint_violators_checkbox = widgets.Checkbox(value=False,description='Show constraint violators',disabled=False,indent=False, layout=widgets.Layout(width='250px', height='30px'))
         data_filtering_hbox = widgets.HBox()
         data_filtering_hbox.children += (self.show_constraint_violators_checkbox, )
         
@@ -94,6 +89,16 @@ class front_gui:
         gpt_run_hbox.children += (self.settings_menu, )
         gpt_run_hbox.children += (self.settings_value, )
         
+        self.best_n_checkbox = widgets.Checkbox(value=False,description='Select best N individuals: ',disabled=False,indent=False, layout=widgets.Layout(width='180px', height='30px'))
+        self.best_n_value = widgets.Text(value='',placeholder='',disabled=False,layout=widgets.Layout(width='50px',height='30px'))
+        self.best_n_button = widgets.Button(description='Save Selection', disabled=False, button_style='', tooltip='Click me', icon='')
+        self.best_n_button.on_click(self.save_best_of_SIRS)
+        
+        best_n_hbox = widgets.HBox()
+        best_n_hbox.children += (self.best_n_checkbox, )
+        best_n_hbox.children += (self.best_n_value, )
+        best_n_hbox.children += (self.best_n_button, )
+        
         active_file_hbox = widgets.HBox()
         active_file_hbox.children += (self.active_file, )
         active_file_hbox.children += (self.active_color, )
@@ -104,8 +109,9 @@ class front_gui:
         file_vbox.children += (self.file_select, )
         file_vbox.children += (active_file_hbox, )
         file_vbox.children += (data_filtering_hbox, )
+        file_vbox.children += (best_n_hbox, )
         file_vbox.children += (gpt_run_hbox, )
-        
+                
         self.x_select = widgets.Dropdown(options=['Temp'],value='Temp',description='x :',disabled=False,layout=widgets.Layout(width='250px',height='30px'))
         self.y_select = widgets.Dropdown(options=['Temp'],value='Temp',description='y :',disabled=False,layout=widgets.Layout(width='250px',height='30px'))
         self.c_select = widgets.Dropdown(options=['Temp'],value='Temp',description='color :',disabled=False,layout=widgets.Layout(width='250px',height='30px'))
@@ -227,6 +233,9 @@ class front_gui:
         self.settings_menu.observe(self.show_settings, names='value')
         self.settings_value.observe(self.edit_settings_to_run, names = 'value')
         
+        self.best_n_checkbox.observe(self.load_and_plot_on_value_change, names='value')
+        self.best_n_value.observe(self.load_and_plot_on_value_change, names='value')
+        
     def on_click(self, event):
                 
         which_line = self.snap_cursor.which_line
@@ -250,7 +259,11 @@ class front_gui:
         self.settings_value.disabled = False
         
         self.settings_menu.options = self.settings.keys()
+        
+        self.settings_value.unobserve_all(name='value')
         self.settings_value.value = str(self.settings[self.settings_menu.value])
+        self.settings_value.observe(self.edit_settings_to_run, names = 'value')
+        
         self.run_settings = copy.copy(self.settings)
     
     def reset_units(self, owner):
@@ -269,6 +282,30 @@ class front_gui:
             self.c_units.value = ''
             self.c_label.value = ''
     
+    def make_file_list(self):
+        file_list = glob.glob(os.path.join(self.pop_directory, '*.csv'))
+        file_list.sort(key=lambda x: os.path.getmtime(x))
+        file_list.reverse()
+        
+        file_list = [os.path.basename(ff) for ff in file_list]
+        for ii,ff in enumerate(file_list):
+            self.default_legend_dict[ff] = f'file {ii+1}'
+            self.legend_dict[ff] = ''
+            
+        return file_list
+    
+    def pop_sampler(self, data, new_pop_size):
+        xopt = Xopt(self.xopt_filename)
+        vocs = xopt.vocs
+        vocs.constraints = {}
+
+        toolbox = cnsga_toolbox(vocs)
+
+        pop = pop_from_data(data, vocs)
+
+        pop = toolbox.select(pop, new_pop_size)
+
+        return data.loc[[int(p.index) for p in pop]]
     
     def next_default_color(self):
         c = self.default_color_list[0]
@@ -313,6 +350,37 @@ class front_gui:
 
         return pop_df
         
+    def save_best_of_SIRS(self, click):
+        pop_filenames = list(self.file_select.value)
+        
+        if (self.best_n_checkbox.value):
+            if isfloat(self.best_n_value.value):
+                best_n = int(np.ceil(float(self.best_n_value.value)))
+                for ii, pop in enumerate(self.pop_list):
+                    if (best_n == len(pop)):
+                        f = pop_filenames[ii].replace('.csv', '-' + str(best_n) + '_best_of_SIRS.csv')
+                        pop.to_csv(os.path.join(self.pop_directory, f), index_label="xopt_index")
+        
+                        # Repopulate file selection lists
+                        file_list = self.make_file_list()
+                        
+                        self.active_file.unobserve_all(name='value')
+                        self.file_select.unobserve_all(name='value')
+                                
+                        self.active_file.index = 0
+                        self.file_select.index = [0]
+                
+                        self.file_select.options=file_list
+                        self.file_select.value=[file_list[0]]
+                                        
+                        self.active_file.options=[file_list[0]]
+                        self.active_file.value=file_list[0]
+                                                
+                        self.file_select.observe(self.load_and_plot_on_value_change, names='value')
+                        self.active_file.observe(self.active_file_change, names='value')
+                                                
+                        self.load_and_plot_on_value_change(None)
+        
     def load_files(self):
         pop_filenames = list(self.file_select.value)
         
@@ -325,7 +393,13 @@ class front_gui:
         
         for f in pop_filenames:
             print(os.path.join(self.pop_directory, f))
-            new_pop = pd.read_csv(os.path.join(self.pop_directory, f), index_col="xopt_index")            
+            new_pop = pd.read_csv(os.path.join(self.pop_directory, f), index_col="xopt_index")     
+            
+            if (self.best_n_checkbox.value):
+                if isfloat(self.best_n_value.value):
+                    best_n = int(np.ceil(float(self.best_n_value.value)))
+                    if ((best_n) > 0) and ((best_n) <= len(new_pop)):
+                        new_pop = self.pop_sampler(new_pop, best_n)
             self.pop_list += [new_pop]
         
         dropdown_items = self.params_from_xopt
@@ -383,6 +457,7 @@ class front_gui:
         pop_filenames = list(self.file_select.value)
             
         for ii, pop in enumerate(self.pop_list):
+            ii_backwards = len(self.pop_list) - ii
             pop_filename = pop_filenames[ii]
             
             if (not self.show_constraint_violators_checkbox.value):
@@ -397,13 +472,13 @@ class front_gui:
             not_nan = np.logical_not(np.isnan(x))
             
             if (self.c_select.value != 'None'):
-                line_handle = self.ax.scatter(x[not_nan], y[not_nan], 10, c=c[not_nan], vmin=cmin, vmax=cmax, cmap='jet', marker='.')
+                line_handle = self.ax.scatter(x[not_nan], y[not_nan], 10, c=c[not_nan], vmin=cmin, vmax=cmax, cmap='jet', marker='.', zorder=ii_backwards)
                 sc.append(line_handle)
             else:
                 legend_str = self.default_legend_dict[pop_filename]
                 if len(self.legend_dict[pop_filename])>0:
                     legend_str = self.legend_dict[pop_filename]
-                line_handle, = self.ax.plot(x[not_nan], y[not_nan], '.', color=self.color_dict[pop_filename], label=legend_str) 
+                line_handle, = self.ax.plot(x[not_nan], y[not_nan], '.', color=self.color_dict[pop_filename], label=legend_str, zorder=ii_backwards) 
                 pl.append(line_handle)
                         
         if (self.legend_checkbox.value):
@@ -501,13 +576,15 @@ class front_gui:
 
         
     def show_settings(self, change):
+        self.settings_value.unobserve_all(name='value')
         self.settings_value.value = str(self.settings[self.settings_menu.value])
+        self.settings_value.observe(self.edit_settings_to_run, names = 'value')
         
     def edit_settings_to_run(self, change):
-        if isfloat(self.settings[self.settings_menu.value]):
+        if type(self.settings[self.settings_menu.value]) is not str:
             if isfloat(self.settings_value.value):
                 self.run_settings[self.settings_menu.value] = float(self.settings_value.value)
         else:
             self.run_settings[self.settings_menu.value] = self.settings_value.value
             
-        #self.settings_box.value = f'run settings = {self.run_settings}'
+        self.settings_box.value = f'Settings modified:\nrun_settings = {self.run_settings}'
