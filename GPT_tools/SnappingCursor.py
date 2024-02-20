@@ -23,6 +23,8 @@ class SnappingCursor:
         self.ax.add_patch(self.circ)
         self.screen_size = ax.get_figure().get_size_inches()
         self.pos = [0, 0]
+        self.data_index = 0
+        self.which_line = 0
         
     def set_visible(self, visible):
         self.text.set_visible(visible)
@@ -76,3 +78,5 @@ class SnappingCursor:
             self.text.set_bbox(dict(edgecolor=self.line_colors[which_line], facecolor=self.line_colors[which_line], alpha=0.7))
 
             self.pos = [x, y]
+            self.data_index = index
+            self.which_line = which_line
