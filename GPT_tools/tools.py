@@ -42,12 +42,12 @@ def format_label(s, latex=True, use_base=False, add_underscore=True):
         s = s.replace('pr', 'p_r')
         s = s.replace('ptrans', 'p_trans')
     if (latex):
-        s = s.replace('trans', '\perp')
-        s = s.replace('sigma','\sigma')
-        s = s.replace('theta', '\theta')
-        s = s.replace('slice_emit', 'Slice \epsilon')
-        s = s.replace('sqrt_norm_emit', '\epsilon')
-        s = s.replace('root_norm_emit', '\epsilon')
+        s = s.replace('trans', '\\perp')
+        s = s.replace('sigma','\\sigma')
+        s = s.replace('theta', '\\theta')
+        s = s.replace('slice_emit', 'Slice \\epsilon')
+        s = s.replace('sqrt_norm_emit', '\\epsilon')
+        s = s.replace('root_norm_emit', '\\epsilon')
         s = s.replace('norm_emit', '\epsilon')
         s = s.replace('emit', '\epsilon')
         s = s.replace('4d','{4d}')
@@ -56,10 +56,10 @@ def format_label(s, latex=True, use_base=False, add_underscore=True):
     else:
         s = s.replace('$', '')
         s = s.replace('trans', '⟂')
-        s = s.replace('\sigma','sigma')
-        s = s.replace('\theta', 'theta')
-        s = s.replace('\epsilon', 'emit')
-        s = s.replace('\mu', 'μ')
+        s = s.replace('\\sigma','sigma')
+        s = s.replace('\\theta', 'theta')
+        s = s.replace('\\epsilon', 'emit')
+        s = s.replace('\\mu', 'μ')
         s = s.replace('sigma','σ')
         s = s.replace('theta', 'θ')
         s = s.replace('slice_emit', 'slice ε')
@@ -158,8 +158,9 @@ def special_screens(z_input, decimals=6, min_length=10):
         z_new = np.sort(copy.copy(z_copy)[special_indices])
         if (len(z_new) < min_length):
             finished = True
-        if (np.all(z_new == z)):
-            finished = True
+        if (len(z_new) == len(z)):
+            if (np.all(z_new == z)):
+                finished = True
         else:
             z = z_new
         
