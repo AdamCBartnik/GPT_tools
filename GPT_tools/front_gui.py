@@ -31,9 +31,12 @@ class front_gui:
 
         obj = list(self.xopt_file['vocs']['objectives'].keys())
         vars = list(self.xopt_file['vocs']['variables'].keys())
-        cons = list(self.xopt_file['vocs']['constraints'].keys())
+        self.params_from_xopt = obj + vars
         
-        self.params_from_xopt = obj + vars + cons
+        if ('constraints' in self.xopt_file['vocs'].keys()):
+            if (self.xopt_file['vocs']['constraints'] is not None):
+                cons = list(self.xopt_file['vocs']['constraints'].keys())
+                self.params_from_xopt = self.params_from_xopt + cons
 
         self.distgen_input_file = self.xopt_file['evaluator']['function_kwargs']['distgen_input_file']
         self.gpt_input_file = self.xopt_file['evaluator']['function_kwargs']['gpt_input_file']
@@ -253,6 +256,7 @@ class front_gui:
         
         wanted_keys = {**self.xopt_file['vocs']['variables'], **self.xopt_file['vocs']['constants']}.keys()
         self.settings = dict((k, all_settings[k]) for k in wanted_keys if k in all_settings)
+        self.run_settings = copy.copy(self.settings)
         self.settings_box.value = f'index = {pop_index[which_point]} in {pop_filename}\n{self.x_select.value} = {all_settings[self.x_select.value]:.7g}\n{self.y_select.value} = {all_settings[self.y_select.value]:.7g}\nsettings = {self.settings}'
         self.run_gpt_button.disabled = False
         self.settings_menu.disabled = False
@@ -264,7 +268,7 @@ class front_gui:
         self.settings_value.value = str(self.settings[self.settings_menu.value])
         self.settings_value.observe(self.edit_settings_to_run, names = 'value')
         
-        self.run_settings = copy.copy(self.settings)
+        
     
     def reset_units(self, owner):
         if (owner == self.x_select):
@@ -339,14 +343,16 @@ class front_gui:
         # Remove individuals that threw an error       
         pop_df = pop_df[pop_df['xopt_error']!=True] 
 
-        for c, v in self.xopt_file['vocs']['constraints'].items():
-            bin_opr, bound = v[0], v[1]
-            bound = float(bound)
+        if ('constraints' in self.xopt_file['vocs'].keys()):
+            if (self.xopt_file['vocs']['constraints'] is not None):
+                for c, v in self.xopt_file['vocs']['constraints'].items():
+                    bin_opr, bound = v[0], v[1]
+                    bound = float(bound)
 
-            if(bin_opr=='LESS_THAN'):
-                pop_df = pop_df[pop_df[c]<bound]
-            elif(bin_opr=='GREATER_THAN'):
-                pop_df = pop_df[pop_df[c]>bound]
+                    if(bin_opr=='LESS_THAN'):
+                        pop_df = pop_df[pop_df[c]<bound]
+                    elif(bin_opr=='GREATER_THAN'):
+                        pop_df = pop_df[pop_df[c]>bound]
 
         return pop_df
         
@@ -577,7 +583,7 @@ class front_gui:
         
     def show_settings(self, change):
         self.settings_value.unobserve_all(name='value')
-        self.settings_value.value = str(self.settings[self.settings_menu.value])
+        self.settings_value.value = str(self.run_settings[self.settings_menu.value])
         self.settings_value.observe(self.edit_settings_to_run, names = 'value')
         
     def edit_settings_to_run(self, change):
