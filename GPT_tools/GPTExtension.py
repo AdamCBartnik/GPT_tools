@@ -50,7 +50,27 @@ def evaluate_run_gpt_with_settings(settings,
         output = merit_f(G)
     else:
         output = default_gpt_merit(G)
-    
+        
+    # Add beginning screen
+    g = copy.deepcopy(G)
+    z_list = g.stat('mean_z', 'screen')
+    min_z = np.min(z_list[z_list>0.0])
+
+    scr = get_screen_data(g, screen_z=min_z)[0]
+
+    g.particles.clear()
+    g.particles.insert(0,scr)
+    g.output['n_tout'] = 0
+    g.output['n_screen'] = 1
+    if merit_f:
+        g_output = merit_f(g)
+    else:
+        g_output = default_gpt_merit(g)
+    for j in g_output.keys():
+        if ('end_' in j):
+            output[j.replace('end_', 'pre_merit_')] = g_output[j]
+        
+    # Add merit_z screen
     ran_settings = copy.copy(G.input['variables'])
 
     if ('merit:z' in ran_settings.keys()):
@@ -76,6 +96,7 @@ def evaluate_run_gpt_with_settings(settings,
 def run_gpt_with_settings(settings=None,
                              gpt_input_file=None,
                              distgen_input_file=None,
+                             input_particle_group=None,  # use either distgen file or particle group, not both
                              workdir=None, 
                              use_tempdir=True,
                              gpt_bin='$GPT_BIN',
@@ -95,23 +116,27 @@ def run_gpt_with_settings(settings=None,
     if (gpt_input_file is None):
         raise ValueError('You must specify the GPT input file')
         
-    if (distgen_input_file is None):
-        raise ValueError('You must specify the distgen input file')
+    if (distgen_input_file is None and input_particle_group is None):
+        raise ValueError('You must specify the distgen input file or provide a particle group')
             
-    # Modify settings for input particlegroup as needed
-    if ('final_n_particle' in settings and 'final_charge:value' in settings and 'final_charge:units' in settings and 'total_charge:value' in settings and 'total_charge:units' in settings):
-        # user specifies final n_particles, rather than initial
-        final_charge = settings['final_charge:value'] * unit_registry.parse_expression(settings['final_charge:units'])
-        final_charge = final_charge.to('coulomb').magnitude
-        total_charge = settings['total_charge:value'] * unit_registry.parse_expression(settings['total_charge:units'])
-        total_charge = total_charge.to('coulomb').magnitude
-        n_particle = int(np.ceil(settings['final_n_particle'] * total_charge / final_charge))
-        settings['n_particle'] = int(np.max([n_particle, int(settings['final_n_particle'])]))
-        if(verbose):
-            print(f'<**** Setting n_particle = {n_particle}.\n')    
-        
-    # Make initial distribution
-    input_particle_group = get_cathode_particlegroup(settings, distgen_input_file, verbose=verbose)
+    if (input_particle_group is not None and distgen_input_file is not None):
+        raise ValueError('Use either distgen input file or input particle group, not both')
+            
+    if (input_particle_group is None):
+        # Modify settings for input particlegroup as needed
+        if ('final_n_particle' in settings and 'final_charge:value' in settings and 'final_charge:units' in settings and 'total_charge:value' in settings and 'total_charge:units' in settings):
+            # user specifies final n_particles, rather than initial
+            final_charge = settings['final_charge:value'] * unit_registry.parse_expression(settings['final_charge:units'])
+            final_charge = final_charge.to('coulomb').magnitude
+            total_charge = settings['total_charge:value'] * unit_registry.parse_expression(settings['total_charge:units'])
+            total_charge = total_charge.to('coulomb').magnitude
+            n_particle = int(np.ceil(settings['final_n_particle'] * total_charge / final_charge))
+            settings['n_particle'] = int(np.max([n_particle, int(settings['final_n_particle'])]))
+            if(verbose):
+                print(f'<**** Setting n_particle = {n_particle}.\n')    
+
+        # Make initial distribution
+        input_particle_group = get_cathode_particlegroup(settings, distgen_input_file, verbose=verbose)
     
     # Check restart parameters self-consistency
     if (('t_restart' in settings) and ('z_restart' in settings)):
@@ -315,17 +340,23 @@ def filter_screen(scr, settings):
     unit_registry = UnitRegistry()
     
     filtered = False
-    if ('final_charge:value' in settings and 'final_charge:units' in settings):
-        final_charge = settings['final_charge:value'] * unit_registry.parse_expression(settings['final_charge:units'])
-        final_charge = final_charge.to('coulomb').magnitude
-        clip_to_charge(scr, final_charge, verbose=False, make_copy=False)
-        filtered = True
+    
+    clip_particles = True
+    if ('clip_final_particles' in settings):
+        clip_particles = settings['clip_final_particles'] == 1
+        
+    if (clip_particles):
+        if ('final_charge:value' in settings and 'final_charge:units' in settings):
+            final_charge = settings['final_charge:value'] * unit_registry.parse_expression(settings['final_charge:units'])
+            final_charge = final_charge.to('coulomb').magnitude
+            clip_to_charge(scr, final_charge, verbose=False, make_copy=False)
+            filtered = True
 
-    if ('final_emit:value' in settings and 'final_emit:units' in settings):
-        final_emit = settings['final_emit:value'] * unit_registry.parse_expression(settings['final_emit:units'])
-        final_emit = final_emit.to('meters').magnitude
-        clip_to_emit(scr, final_emit, verbose=False, make_copy=False)
-        filtered = True
+        if ('final_emit:value' in settings and 'final_emit:units' in settings):
+            final_emit = settings['final_emit:value'] * unit_registry.parse_expression(settings['final_emit:units'])
+            final_emit = final_emit.to('meters').magnitude
+            clip_to_emit(scr, final_emit, verbose=False, make_copy=False)
+            filtered = True
         
     return filtered
 

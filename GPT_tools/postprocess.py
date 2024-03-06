@@ -188,19 +188,22 @@ def remove_spinning(screen_input, make_copy=False):
 
 # Removes particles that have zero weight from the distribution
 def kill_zero_weight(screen_input, make_copy=False):
-    data = {}
     w = screen_input.weight
-    for k in screen_input._settable_array_keys:
-        data[k] = screen_input[k][w>0]
-
-    for k in screen_input._settable_scalar_keys:
-        data[k] = screen_input[k]
-    
-    new_screen = ParticleGroupExtension(data=data)
     
     if (make_copy==False):
-        screen_input = new_screen
-    
+        for k in screen_input._settable_array_keys:
+            screen_input.data[k] = screen_input[k][w>0]
+        new_screen = screen_input
+    else:
+        data = {}
+        for k in screen_input._settable_array_keys:
+            data[k] = screen_input[k][w>0]
+
+        for k in screen_input._settable_scalar_keys:
+            data[k] = screen_input[k]
+
+        new_screen = ParticleGroupExtension(data=data)
+
     return new_screen
     
 

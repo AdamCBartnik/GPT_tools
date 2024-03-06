@@ -254,7 +254,10 @@ class front_gui:
         
         pop_filename = os.path.join(self.pop_directory, self.file_select.value[which_line])
         
-        wanted_keys = {**self.xopt_file['vocs']['variables'], **self.xopt_file['vocs']['constants']}.keys()
+        wanted_keys = list({**self.xopt_file['vocs']['variables'], **self.xopt_file['vocs']['constants']}.keys())
+        if ('merit:min_mean_z' in all_settings.keys()):
+            wanted_keys.append('merit:min_mean_z')
+        
         self.settings = dict((k, all_settings[k]) for k in wanted_keys if k in all_settings)
         self.run_settings = copy.copy(self.settings)
         self.settings_box.value = f'index = {pop_index[which_point]} in {pop_filename}\n{self.x_select.value} = {all_settings[self.x_select.value]:.7g}\n{self.y_select.value} = {all_settings[self.y_select.value]:.7g}\nsettings = {self.settings}'
@@ -300,15 +303,16 @@ class front_gui:
     
     def pop_sampler(self, data, new_pop_size):
         xopt = Xopt(self.xopt_filename)
+                
         vocs = xopt.vocs
-        vocs.constraints = {}
-
+        #vocs.constraints = {}  # At some point this didn't seem to work, but now it does...
+        
         toolbox = cnsga_toolbox(vocs)
-
+            
         pop = pop_from_data(data, vocs)
-
+        
         pop = toolbox.select(pop, new_pop_size)
-
+        
         return data.loc[[int(p.index) for p in pop]]
     
     def next_default_color(self):
