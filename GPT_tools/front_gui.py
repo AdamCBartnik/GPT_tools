@@ -302,18 +302,20 @@ class front_gui:
         return file_list
     
     def pop_sampler(self, data, new_pop_size):
-        xopt = Xopt(self.xopt_filename)
-                
+        xopt = Xopt.from_file(self.xopt_filename)
+        xopt.strict = False    
+            
         vocs = xopt.vocs
         #vocs.constraints = {}  # At some point this didn't seem to work, but now it does...
-        
+                
         toolbox = cnsga_toolbox(vocs)
             
         pop = pop_from_data(data, vocs)
         
         pop = toolbox.select(pop, new_pop_size)
-        
-        return data.loc[[int(p.index) for p in pop]]
+        index_list = np.array([int(p.index) for p in pop])
+                
+        return data.loc[data.index[index_list]]
     
     def next_default_color(self):
         c = self.default_color_list[0]

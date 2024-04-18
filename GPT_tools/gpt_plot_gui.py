@@ -27,7 +27,7 @@ def gpt_plot_gui(gpt_data_input):
     label_layout = layout_150px
     
     # Make widgets
-    dist_list = ['t','x','y','r_centered','px','py','pz','pr_centered','ptrans','action_x','action_y','action_4d']
+    dist_list = ['t','x','y','z','r_centered','px','py','pz','pr_centered','ptrans','action_x','action_y','action_4d']
     
     plottype_list = ['Trends', '1D Distribution', '2D Distribution']
     plottype_dropdown = widgets.Dropdown(options=[(a, i) for (i,a) in enumerate(plottype_list)], value=0)

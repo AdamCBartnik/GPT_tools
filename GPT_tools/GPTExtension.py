@@ -105,7 +105,8 @@ def run_gpt_with_settings(settings=None,
                              verbose=False,
                              gpt_verbose=False,
                              asci2gdf_bin='$ASCI2GDF_BIN',
-                             kill_msgs=[]
+                             kill_msgs=[],
+                             load_fields=False
                              ):
 
     unit_registry = UnitRegistry()
@@ -133,8 +134,8 @@ def run_gpt_with_settings(settings=None,
             n_particle = int(np.ceil(settings['final_n_particle'] * total_charge / final_charge))
             settings['n_particle'] = int(np.max([n_particle, int(settings['final_n_particle'])]))
             if(verbose):
-                print(f'<**** Setting n_particle = {n_particle}.\n')    
-
+                print(f'<**** Setting n_particle = {n_particle}.\n')
+    
         # Make initial distribution
         input_particle_group = get_cathode_particlegroup(settings, distgen_input_file, verbose=verbose)
     
@@ -146,7 +147,7 @@ def run_gpt_with_settings(settings=None,
         # Starting from scratch, either single or multiple passes
         
         # Make gpt and generator objects
-        G = GPT(gpt_bin=gpt_bin, input_file=gpt_input_file, initial_particles=input_particle_group, workdir=workdir, use_tempdir=use_tempdir, parse_layout=False, kill_msgs=kill_msgs)
+        G = GPT(gpt_bin=gpt_bin, input_file=gpt_input_file, initial_particles=input_particle_group, workdir=workdir, use_tempdir=use_tempdir, parse_layout=False, kill_msgs=kill_msgs, load_fields=load_fields)
         G.timeout=timeout
         G.verbose = verbose
 
@@ -235,7 +236,7 @@ def run_gpt_with_settings(settings=None,
             restart_particles.drift_to_t(t_restart) # Change to an effective tout... even though this almost always a bad idea
 
         # Do second GPT call
-        G = GPT(gpt_bin=gpt_bin, input_file=gpt_input_file, initial_particles=restart_particles, workdir=workdir, use_tempdir=use_tempdir, parse_layout=False, kill_msgs=kill_msgs)
+        G = GPT(gpt_bin=gpt_bin, input_file=gpt_input_file, initial_particles=restart_particles, workdir=workdir, use_tempdir=use_tempdir, parse_layout=False, kill_msgs=kill_msgs, load_fields=load_fields)
         G.timeout = timeout
         G.verbose = verbose
 

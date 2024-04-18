@@ -65,7 +65,7 @@ class ParticleGroupExtension(ParticleGroup):
         y_mean = np.sum(self.y * self.weight)/np.sum(self.weight)
         r = np.sqrt((self.x-x_mean)*(self.x-x_mean) + (self.y-y_mean)*(self.y-y_mean))
         return ((self.x - x_mean)*self.px + (self.y - y_mean)*self.py)/r
-    
+        
     @property
     def r_centered(self):
         x_mean = np.sum(self.x * self.weight)/np.sum(self.weight)
@@ -73,7 +73,7 @@ class ParticleGroupExtension(ParticleGroup):
         return np.sqrt((self.x-x_mean)*(self.x-x_mean) + (self.y-y_mean)*(self.y-y_mean))
     
     @pr_centered.setter
-    def signed_pr(self, pr_input):
+    def pr_centered(self, pr_input):
         x_mean = np.sum(self.x * self.weight)/np.sum(self.weight)
         y_mean = np.sum(self.y * self.weight)/np.sum(self.weight)
         x = self.x-x_mean
