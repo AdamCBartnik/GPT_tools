@@ -40,6 +40,7 @@ class front_gui:
 
         self.distgen_input_file = self.xopt_file['evaluator']['function_kwargs']['distgen_input_file']
         self.gpt_input_file = self.xopt_file['evaluator']['function_kwargs']['gpt_input_file']
+        self.wildcard_str = widgets.Text(value='*pop*.csv',placeholder='File wildcard',description='',disabled=False, layout=widgets.Layout(width='200px', height='30px'))
         
         file_list = self.make_file_list()
                             
@@ -107,8 +108,12 @@ class front_gui:
         active_file_hbox.children += (self.active_color, )
         active_file_hbox.children += (self.legend_checkbox, ) 
         active_file_hbox.children += (self.legend_str, ) 
-                                            
-        file_vbox.children += (widgets.Label('Select files (hold Ctrl for multiple)'), )
+                                  
+        file_wildcard_hbox = widgets.HBox()
+        file_wildcard_hbox.children += (widgets.Label('Select files (hold Ctrl for multiple)'), )
+        file_wildcard_hbox.children += (self.wildcard_str, )
+            
+        file_vbox.children += (file_wildcard_hbox, )
         file_vbox.children += (self.file_select, )
         file_vbox.children += (active_file_hbox, )
         file_vbox.children += (data_filtering_hbox, )
@@ -239,6 +244,8 @@ class front_gui:
         self.best_n_checkbox.observe(self.load_and_plot_on_value_change, names='value')
         self.best_n_value.observe(self.load_and_plot_on_value_change, names='value')
         
+        self.wildcard_str.observe(self.refresh_files_load_and_plot_on_value_change, names='value')
+        
     def on_click(self, event):
                 
         which_line = self.snap_cursor.which_line
@@ -289,8 +296,31 @@ class front_gui:
             self.c_units.value = ''
             self.c_label.value = ''
     
+    def put_file_list_in_widgets(self):
+        
+        # Repopulate file selection lists
+        file_list = self.make_file_list()
+
+        self.active_file.unobserve_all(name='value')
+        self.file_select.unobserve_all(name='value')
+
+        self.active_file.index = 0
+        self.file_select.index = [0]
+
+        self.file_select.options=file_list
+        self.file_select.value=[file_list[0]]
+
+        self.active_file.options=[file_list[0]]
+        self.active_file.value=file_list[0]
+
+        self.file_select.observe(self.load_and_plot_on_value_change, names='value')
+        self.active_file.observe(self.active_file_change, names='value')
+
     def make_file_list(self):
-        file_list = glob.glob(os.path.join(self.pop_directory, '*.csv'))
+        file_list = glob.glob(os.path.join(self.pop_directory, self.wildcard_str.value))
+        if (len(file_list) == 0):
+            file_list = glob.glob(os.path.join(self.pop_directory, '*.csv'))
+        
         file_list.sort(key=lambda x: os.path.getmtime(x))
         file_list.reverse()
         
@@ -373,23 +403,7 @@ class front_gui:
                         f = pop_filenames[ii].replace('.csv', '-' + str(best_n) + '_best_of_SIRS.csv')
                         pop.to_csv(os.path.join(self.pop_directory, f), index_label="xopt_index")
         
-                        # Repopulate file selection lists
-                        file_list = self.make_file_list()
-                        
-                        self.active_file.unobserve_all(name='value')
-                        self.file_select.unobserve_all(name='value')
-                                
-                        self.active_file.index = 0
-                        self.file_select.index = [0]
-                
-                        self.file_select.options=file_list
-                        self.file_select.value=[file_list[0]]
-                                        
-                        self.active_file.options=[file_list[0]]
-                        self.active_file.value=file_list[0]
-                                                
-                        self.file_select.observe(self.load_and_plot_on_value_change, names='value')
-                        self.active_file.observe(self.active_file_change, names='value')
+                        self.put_file_list_in_widgets()
                                                 
                         self.load_and_plot_on_value_change(None)
         
@@ -555,6 +569,10 @@ class front_gui:
         
     def plot_on_value_change(self, change):
         self.make_plot()
+        
+    def refresh_files_load_and_plot_on_value_change(self, change):
+        self.put_file_list_in_widgets()
+        self.load_and_plot_on_value_change(change)
         
     def load_and_plot_on_value_change(self, change):
         self.load_files()
