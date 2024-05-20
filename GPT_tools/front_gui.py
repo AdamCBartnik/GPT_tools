@@ -9,6 +9,7 @@ from GPT_tools.GPTExtension import run_gpt_with_settings
 from fastnumbers import isfloat
 from xopt.generators.ga.cnsga import cnsga_toolbox, pop_from_data
 from xopt import Xopt
+from scipy.optimize import curve_fit
 
 class front_gui:
     def __init__(self, xopt_file, pop_directory):
@@ -87,11 +88,13 @@ class front_gui:
         self.run_gpt_button.on_click(self.run_gpt)
         self.settings_menu = widgets.Dropdown(disabled=True, layout=widgets.Layout(width='150px', height='30px'))
         self.settings_value = widgets.Text(value='',placeholder='',disabled=True,layout=widgets.Layout(width='110px',height='30px'))
+        self.save_run_checkbox = widgets.Checkbox(value=False,description='Save run',disabled=False,indent=False, layout=widgets.Layout(width='80px', height='30px'))
         
         gpt_run_hbox = widgets.HBox()
         gpt_run_hbox.children += (self.run_gpt_button, )
         gpt_run_hbox.children += (self.settings_menu, )
         gpt_run_hbox.children += (self.settings_value, )
+        gpt_run_hbox.children += (self.save_run_checkbox, )
         
         self.best_n_checkbox = widgets.Checkbox(value=False,description='Select best N individuals: ',disabled=False,indent=False, layout=widgets.Layout(width='180px', height='30px'))
         self.best_n_value = widgets.Text(value='',placeholder='',disabled=False,layout=widgets.Layout(width='50px',height='30px'))
@@ -102,6 +105,15 @@ class front_gui:
         best_n_hbox.children += (self.best_n_checkbox, )
         best_n_hbox.children += (self.best_n_value, )
         best_n_hbox.children += (self.best_n_button, )
+        
+        self.cheb_checkbox = widgets.Checkbox(value=False,description='Fit Rational: ',disabled=False,indent=False, layout=widgets.Layout(width='180px', height='30px'))
+        self.cheb_value = widgets.Text(value='4',placeholder='',disabled=False,layout=widgets.Layout(width='50px',height='30px'))
+        self.cheb_value2 = widgets.Text(value='4',placeholder='',disabled=False,layout=widgets.Layout(width='50px',height='30px'))
+        
+        cheb_hbox = widgets.HBox()
+        cheb_hbox.children += (self.cheb_checkbox, )
+        cheb_hbox.children += (self.cheb_value, )
+        cheb_hbox.children += (self.cheb_value2, )
         
         active_file_hbox = widgets.HBox()
         active_file_hbox.children += (self.active_file, )
@@ -118,6 +130,7 @@ class front_gui:
         file_vbox.children += (active_file_hbox, )
         file_vbox.children += (data_filtering_hbox, )
         file_vbox.children += (best_n_hbox, )
+        file_vbox.children += (cheb_hbox, )
         file_vbox.children += (gpt_run_hbox, )
                 
         self.x_select = widgets.Dropdown(options=['Temp'],value='Temp',description='x :',disabled=False,layout=widgets.Layout(width='250px',height='30px'))
@@ -243,6 +256,10 @@ class front_gui:
         
         self.best_n_checkbox.observe(self.load_and_plot_on_value_change, names='value')
         self.best_n_value.observe(self.load_and_plot_on_value_change, names='value')
+        
+        self.cheb_checkbox.observe(self.plot_on_value_change, names='value')
+        self.cheb_value.observe(self.plot_on_value_change, names='value')
+        self.cheb_value2.observe(self.plot_on_value_change, names='value')
         
         self.wildcard_str.observe(self.refresh_files_load_and_plot_on_value_change, names='value')
         
@@ -392,6 +409,7 @@ class front_gui:
 
         return pop_df
         
+    # SIRS = Selected Individuals for ReSubmission
     def save_best_of_SIRS(self, click):
         pop_filenames = list(self.file_select.value)
         
@@ -458,6 +476,15 @@ class front_gui:
             self.c_select.options = ['None'] + dropdown_items
             self.c_select.value = 'None'
  
+    def rat_poly(self, x, n1, *ab):        
+        #n1 = 3
+        
+        a = list(ab[0][:n1])
+        b = [0, 1] + list(ab[0][n1:])
+        return np.polynomial.polynomial.polyval(x, a)/np.polynomial.polynomial.polyval(x, b)
+        
+        #return a[0]/np.abs(x)**(a[1]**2)*(1 + np.polynomial.polynomial.polyval(x, b))/(1.0 + np.abs(a[2])*np.abs(x)**len(b))
+        
     
     def make_plot(self):   
         
@@ -500,12 +527,44 @@ class front_gui:
             if (self.c_select.value != 'None'):
                 line_handle = self.ax.scatter(x[not_nan], y[not_nan], 10, c=c[not_nan], vmin=cmin, vmax=cmax, cmap='jet', marker='.', zorder=ii_backwards)
                 sc.append(line_handle)
+                
             else:
                 legend_str = self.default_legend_dict[pop_filename]
                 if len(self.legend_dict[pop_filename])>0:
                     legend_str = self.legend_dict[pop_filename]
                 line_handle, = self.ax.plot(x[not_nan], y[not_nan], '.', color=self.color_dict[pop_filename], label=legend_str, zorder=ii_backwards) 
                 pl.append(line_handle)
+            
+            if self.cheb_checkbox.value == True:
+                n1 = float(self.cheb_value.value)
+                n2 = float(self.cheb_value2.value)
+                                
+                if isfloat(n1):
+                    n1_cheb = int(np.min([5, np.max([0, n1])]))
+                else:
+                    n1_cheb = int(0)
+                    
+                if isfloat(n2):
+                    n2_cheb = int(np.min([5, np.max([0, n2])]))
+                else:
+                    n2_cheb = int(0)
+                
+                x_scale = np.mean(np.abs(x[not_nan]))
+                y_scale = np.mean(np.abs(y[not_nan]))
+                
+                p0a = 2*(np.random.rand(n1_cheb)-0.5)
+                p0b = 2*(np.random.rand(n2_cheb)-0.5)    
+                #p0a = np.ones(n1_cheb)
+                #p0b = np.ones(n2_cheb)
+                                
+                #p0a = p0a * 2.0**(-np.arange(0, n1_cheb))
+                #p0b = p0b * 2.0**(-np.arange(0, n2_cheb))
+                    
+                p0 = list(p0a) + list(p0b)
+                p0, cov = curve_fit(lambda xx,*aa: self.rat_poly(xx,n1_cheb,aa), x[not_nan]/x_scale, y[not_nan]/y_scale, p0=p0)        
+                x_cfit = np.linspace(np.min(x[not_nan]), np.max(x[not_nan]), 300)
+
+                line_handle, = self.ax.plot(x_cfit, y_scale*self.rat_poly(x_cfit/x_scale, n1_cheb, p0), '-', color=self.color_dict[pop_filename], label='Fit', zorder=ii_backwards) 
                         
         if (self.legend_checkbox.value):
             self.ax.legend()
@@ -602,8 +661,15 @@ class front_gui:
                                  auto_phase=False,
                                  timeout=100000)
         self.ran_settings = copy.copy(self.gpt_data.input['variables'])
-        self.settings_box.value = 'Finished running.'
 
+        self.settings_box.value = 'Got to here.'
+        
+        if (self.save_run_checkbox.value == True):
+            file_to_save = os.path.join(self.pop_directory, time.strftime("gptdata-%Y_%m_%d-%H_%M_%S.h5"))
+            self.gpt_data.archive(h5=file_to_save)
+            self.settings_box.value = f'Finished. Saved output to: {file_to_save}'
+        else:
+            self.settings_box.value = 'Finished running.'
         
     def show_settings(self, change):
         self.settings_value.unobserve_all(name='value')

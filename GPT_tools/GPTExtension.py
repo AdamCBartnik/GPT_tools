@@ -1021,6 +1021,7 @@ def get_distgen_beam_for_phasing_from_particlegroup(PG, n_particle=10, verbose=F
 
     phasing_distgen_input = {'n_particle':n_particle, 'random_type':'hammersley', 'transforms':transforms,
                              'total_charge':{'value':1.0, 'units':'pC'},
+                             'species':'electron',
                              'start': {'type':'time', 'tstart':{'value': 0.0, 'units': 's'}},}
     
     gen = Generator(phasing_distgen_input, verbose=verbose) 
