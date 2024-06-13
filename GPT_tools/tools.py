@@ -5,17 +5,9 @@ from .nicer_units import *
 from .ParticleGroupExtension import ParticleGroupExtension
 from scipy.stats import binned_statistic_2d
 import matplotlib.pyplot as plt
-import ipywidgets as widgets
-
-def make_dataframe_widget(df):
-    out = widgets.Output()
-    with out:
-        display(df, clear=True)
-    return out
 
 def make_default_plot(plot_width=700, plot_height=400, dpi = 120, is_table=False, **params):
     
-    #plot_layout = widgets.Layout(width='auto', height='auto')
     plot_layout = 'constrained'  # constrained, tight
     
     plt.ioff() # turn off interactive mode so figure doesn't show

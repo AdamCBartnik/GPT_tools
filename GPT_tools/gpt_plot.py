@@ -7,9 +7,16 @@ from .postprocess import postprocess_screen
 from pmd_beamphysics.units import c_light, e_charge
 from .ParticleGroupExtension import ParticleGroupExtension, convert_gpt_data, divide_particles
 from ipywidgets import HBox
+import ipywidgets as widgets
 from GPT_tools.SnappingCursor import SnappingCursor
 import pandas as pd
 import random
+
+def make_dataframe_widget(df):
+    out = widgets.Output()
+    with out:
+        display(df, clear=True)
+    return out
 
 def gpt_plot(gpt_data_input, var1, var2, units=None, fig_ax=None, format_input_data=True, show_survivors_at_z=None, show_survivors_after_z=None, 
              show_screens=True, show_cursor=True, return_data=False, legend=True, **params):
