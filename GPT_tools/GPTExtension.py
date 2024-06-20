@@ -33,18 +33,20 @@ def evaluate_run_gpt_with_settings(settings,
     """
     
     unit_registry = UnitRegistry()
-    
-    G = run_gpt_with_settings(settings=settings,
-                         gpt_input_file=gpt_input_file,
-                         distgen_input_file=distgen_input_file,
-                         workdir=workdir, 
-                         use_tempdir=use_tempdir,
-                         gpt_bin=gpt_bin,
-                         timeout=timeout,
-                         auto_phase=auto_phase,
-                         verbose=verbose,
-                         gpt_verbose=gpt_verbose,
-                         asci2gdf_bin=asci2gdf_bin)
+    try:
+        G = run_gpt_with_settings(settings=settings,
+                             gpt_input_file=gpt_input_file,
+                             distgen_input_file=distgen_input_file,
+                             workdir=workdir, 
+                             use_tempdir=use_tempdir,
+                             gpt_bin=gpt_bin,
+                             timeout=timeout,
+                             auto_phase=auto_phase,
+                             verbose=verbose,
+                             gpt_verbose=gpt_verbose,
+                             asci2gdf_bin=asci2gdf_bin)
+    except Exception as e:
+        return {'run_error': True, 'run_error_str': str(e)}
     
     if merit_f:
         output = merit_f(G)
@@ -89,6 +91,8 @@ def evaluate_run_gpt_with_settings(settings,
         for j in g_output.keys():
             if ('end_' in j):
                 output[j.replace('end_', f'merit:min_')] = g_output[j]
+                
+    output['run_error'] = False
             
     return output
 
