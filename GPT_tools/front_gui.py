@@ -84,6 +84,12 @@ class front_gui:
         data_filtering_hbox = widgets.HBox()
         data_filtering_hbox.children += (self.show_constraint_violators_checkbox, )
         
+        self.color_fading_checkbox = widgets.Checkbox(value=False,description='Fading colors',disabled=False,indent=False, layout=widgets.Layout(width='125px', height='30px'))
+        self.color_fading_alpha = widgets.Text(value='0.05',placeholder='',description='alpha: ',disabled=False,layout=widgets.Layout(width='150px',height='30px'))
+        color_fading_hbox = widgets.HBox()
+        color_fading_hbox.children += (self.color_fading_checkbox, )
+        color_fading_hbox.children += (self.color_fading_alpha, )
+        
         self.run_gpt_button = widgets.Button(description='Run Settings', disabled=True, button_style='', tooltip='Click me', icon='')
         self.run_gpt_button.on_click(self.run_gpt)
         self.settings_menu = widgets.Dropdown(disabled=True, layout=widgets.Layout(width='150px', height='30px'))
@@ -128,6 +134,7 @@ class front_gui:
         file_vbox.children += (file_wildcard_hbox, )
         file_vbox.children += (self.file_select, )
         file_vbox.children += (active_file_hbox, )
+        file_vbox.children += (color_fading_hbox, )
         file_vbox.children += (data_filtering_hbox, )
         file_vbox.children += (best_n_hbox, )
         file_vbox.children += (cheb_hbox, )
@@ -260,6 +267,9 @@ class front_gui:
         self.cheb_checkbox.observe(self.plot_on_value_change, names='value')
         self.cheb_value.observe(self.plot_on_value_change, names='value')
         self.cheb_value2.observe(self.plot_on_value_change, names='value')
+        
+        self.color_fading_checkbox.observe(self.plot_on_value_change, names='value')
+        self.color_fading_alpha.observe(self.plot_on_value_change, names='value')
         
         self.wildcard_str.observe(self.refresh_files_load_and_plot_on_value_change, names='value')
         
@@ -508,7 +518,7 @@ class front_gui:
         pl = []
         
         pop_filenames = list(self.file_select.value)
-            
+                        
         for ii, pop in enumerate(self.pop_list):
             ii_backwards = len(self.pop_list) - ii
             pop_filename = pop_filenames[ii]
@@ -532,7 +542,20 @@ class front_gui:
                 legend_str = self.default_legend_dict[pop_filename]
                 if len(self.legend_dict[pop_filename])>0:
                     legend_str = self.legend_dict[pop_filename]
-                line_handle, = self.ax.plot(x[not_nan], y[not_nan], '.', color=self.color_dict[pop_filename], label=legend_str, zorder=ii_backwards) 
+                if (self.color_fading_checkbox.value):
+                    line_color = self.color_dict[pop_filenames[0]]
+                    if (ii==0):
+                        line_alpha = 1.0
+                    else:
+                        if isfloat(self.color_fading_alpha.value):
+                            line_alpha = float(self.color_fading_alpha.value)
+                            line_alpha = np.min([np.max([0.001, line_alpha]), 1.0])
+                        else:
+                            line_alpha = 0.001
+                else:
+                    line_color = self.color_dict[pop_filename]
+                    line_alpha = 1.0
+                line_handle, = self.ax.plot(x[not_nan], y[not_nan], '.', color=line_color, label=legend_str, zorder=ii_backwards, alpha=line_alpha) 
                 pl.append(line_handle)
             
             if self.cheb_checkbox.value == True:
