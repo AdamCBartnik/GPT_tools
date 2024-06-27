@@ -1,5 +1,6 @@
 n_particle: 2000
 random_type: hammersley
+species: electron
 
 total_charge:
   units: fC

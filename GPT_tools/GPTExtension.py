@@ -91,7 +91,20 @@ def evaluate_run_gpt_with_settings(settings,
         for j in g_output.keys():
             if ('end_' in j):
                 output[j.replace('end_', f'merit:min_')] = g_output[j]
-                
+            
+    # If 'duplicate::' appears in xopt constants, then duplicate an output to a new key 
+    for s in ran_settings.keys():
+        s_split = s.split('::')
+        if np.any([xx=='duplicate' for xx in s_split]):
+            if len(s_split) == 2:
+                old_variable = s_split[1]
+                new_variable = ran_settings[s]
+                if old_variable in output:
+                    output[new_variable] = output[old_variable]
+                    print(f'Duplicating {old_variable} to {new_variable}')
+                else:
+                    print(f'Warning: Could not find {old_variable} to duplicate')
+            
     output['run_error'] = False
             
     return output
