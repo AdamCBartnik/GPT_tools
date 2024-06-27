@@ -96,8 +96,8 @@ def evaluate_run_gpt_with_settings(settings,
     for s in ran_settings.keys():
         s_split = s.split('::')
         if np.any([xx=='duplicate' for xx in s_split]):
-            if len(s_split) == 2:
-                old_variable = s_split[1]
+            if len(s_split) > 1:
+                old_variable = s_split[-1]
                 new_variable = ran_settings[s]
                 if old_variable in output:
                     output[new_variable] = output[old_variable]
