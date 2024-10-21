@@ -110,6 +110,99 @@ def evaluate_run_gpt_with_settings(settings,
     return output
 
 
+
+
+def evaluate_run_gpt_with_THz(settings,
+                                 archive_path=None,
+                                 merit_f=None, 
+                                 gpt_input_file=None,
+                                 distgen_input_file=None,
+                                 workdir=None, 
+                                 use_tempdir=True,
+                                 gpt_bin='$GPT_BIN',
+                                 timeout=2500,
+                                 auto_phase=False,
+                                 verbose=False,
+                                 gpt_verbose=False,
+                                 asci2gdf_bin='$ASCI2GDF_BIN',
+                                 debug=False):    
+    """
+    Will raise an exception if there is an error. 
+    """
+    
+    unit_registry = UnitRegistry()
+    try:
+        G = run_gpt_with_THz(settings=settings,
+                             gpt_input_file=gpt_input_file,
+                             distgen_input_file=distgen_input_file,
+                             workdir=workdir, 
+                             use_tempdir=use_tempdir,
+                             gpt_bin=gpt_bin,
+                             timeout=timeout,
+                             auto_phase=auto_phase,
+                             verbose=verbose,
+                             gpt_verbose=gpt_verbose,
+                             asci2gdf_bin=asci2gdf_bin)
+    except Exception as e:
+        return {'run_error': True, 'run_error_str': str(e)}
+    
+    if merit_f:
+        output = merit_f(G)
+    else:
+        output = default_gpt_merit(G)
+        
+    output['run_error'] = False
+            
+    return output
+        
+
+
+def run_gpt_with_THz(settings=None,
+                             gpt_input_file=None,
+                             distgen_input_file=None,
+                             input_particle_group=None,  # use either distgen file or particle group, not both
+                             workdir=None, 
+                             use_tempdir=True,
+                             gpt_bin='$GPT_BIN',
+                             timeout=2500,
+                             auto_phase=False,
+                             verbose=False,
+                             gpt_verbose=False,
+                             asci2gdf_bin='$ASCI2GDF_BIN',
+                             kill_msgs=[],
+                             load_fields=False
+                             ):
+
+    settings_t0 = copy.copy(settings)
+    settings_t0['n_particle'] = 10
+    settings_t0['pulse_energy'] = 0
+    settings_t0['pulse_energy2'] = 0
+    settings_t0['n_screens'] = 0
+    settings_t0['space_charge'] = 0
+    settings_t0['auto_phase'] = 1
+    gpt_data = run_gpt_with_settings(settings_t0,
+                             gpt_input_file=gpt_input_file,
+                             distgen_input_file=distgen_input_file,
+                             verbose=False,
+                             gpt_verbose=False,
+                             auto_phase=auto_phase,
+                             timeout=timeout)
+    settings['t0'] = get_screen_data(gpt_data, screen_z=settings["z_mirror"])[0]["mean_t"]
+    settings['t02'] = get_screen_data(gpt_data, screen_z=settings["z_mirror2"])[0]["mean_t"]
+    if (verbose):
+        print(f'setting t0 = {settings["t0"]}, t02 = {settings["t02"]}')
+    gpt_data = run_gpt_with_settings(settings,
+                             gpt_input_file=gpt_input_file,
+                             distgen_input_file=distgen_input_file,
+                             verbose=verbose,
+                             gpt_verbose=gpt_verbose,
+                             auto_phase=auto_phase,
+                             timeout=timeout)
+    
+    return gpt_data
+
+
+
 def run_gpt_with_settings(settings=None,
                              gpt_input_file=None,
                              distgen_input_file=None,

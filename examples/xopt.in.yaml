@@ -57,6 +57,8 @@ vocs:
     
     merit:min: 'sqrt_norm_emit_4d'
     
+    duplicate::merit:min_sigma_t: 'example_dupe_merit:min_sigma_t'
+    
   objectives:
     merit:min_sigma_t:             MINIMIZE     # [s]
     merit:min_sqrt_norm_emit_4d:   MINIMIZE     # [m] 

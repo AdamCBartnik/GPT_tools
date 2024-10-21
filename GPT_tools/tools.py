@@ -272,7 +272,7 @@ def pad_data_with_zeros(edges_plt, hist_plt, sides=[True,True]):
     
 def check_subtract_mean(var):
     subtract_mean = False
-    if (var in ['x', 'y', 'z', 't']):
+    if (var in ['x', 'y', 'z', 't', 'kinetic_energy', 'energy']):
         subtract_mean = True
 
     #subtract_mean = True
@@ -312,7 +312,7 @@ def add_row(data, **params):
 
 
 
-def scatter_color(fig, ax, pmd, x, y, weights=None, color_var='density', bins=100, colormap=mpl.cm.get_cmap('jet'), is_radial_var=[False, False], **kwargs):
+def scatter_color(fig, ax, pmd, x, y, weights=None, color_var='density', bins=100, colormap=mpl.cm.get_cmap('jet'), is_radial_var=[False, False], zlim=None):
     
     force_zero = False
     use_separate_data = False
@@ -352,18 +352,22 @@ def scatter_color(fig, ax, pmd, x, y, weights=None, color_var='density', bins=10
         c_id = color_var_data.id
         c_dict = {id : i for i,id in enumerate(c_id)}
         c = [c[c_dict[id]] if id in c_dict else np.nan for id in pmd.id]
-    
+        
     cmin = np.nanmin(c)
     cmax = np.nanmax(c)
     if (force_zero):
         cmin = 0.0
-        
+    
+    if (zlim is not None):
+        cmin = zlim[0]
+        cmax = zlim[1]
+    
     pc = ax.scatter(x, y, s=5, c=c, cmap=colormap, vmin=cmin, vmax=cmax)
     return plt.colorbar(pc, label=title_str, ax=ax)
         
         
         
-def hist2d(fig, ax, pmd, x, y, weights, color_var='density', bins=[100,100], colormap=mpl.cm.get_cmap('jet'), is_radial_var=[False,False]):
+def hist2d(fig, ax, pmd, x, y, weights, color_var='density', bins=[100,100], colormap=mpl.cm.get_cmap('jet'), is_radial_var=[False,False], zlim=None):
     force_zero = False
     use_separate_data = False
             
@@ -423,6 +427,10 @@ def hist2d(fig, ax, pmd, x, y, weights, color_var='density', bins=[100,100], col
     zmax = np.nanmax(H)
     if (force_zero):
         zmin = 0.0
+        
+    if (zlim is not None):
+        zmin = zlim[0]
+        zmax = zlim[1]
         
     xcenters = 0.5*(xedges[0:-1] + xedges[1:])
     ycenters = 0.5*(yedges[0:-1] + yedges[1:])

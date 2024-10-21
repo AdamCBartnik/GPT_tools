@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib as mpl
-from gpt.gpt import GPT as GPT
+from gpt import GPT
 from .tools import *
 from .nicer_units import *
 from .postprocess import postprocess_screen
@@ -347,8 +347,10 @@ def gpt_plot_dist2d(pmd, var1, var2, plot_type='histogram', units=None, fig=None
     
     screen_key = None
     screen_value = None
+    
     if (isinstance(pmd, GPT)):
         pmd, screen_key, screen_value = get_screen_data(pmd, **params)
+    
     if (not isinstance(pmd, ParticleGroupExtension)):
         pmd = ParticleGroupExtension(input_particle_group=pmd)
     pmd = postprocess_screen(pmd, **params)
@@ -378,10 +380,20 @@ def gpt_plot_dist2d(pmd, var1, var2, plot_type='histogram', units=None, fig=None
         nbins = [nbins, nbins]
         
     if ('colormap' in params):
-        colormap = mpl.cm.get_cmap(params[colormap])
+        if type(params['colormap']) == str:
+            colormap = mpl.cm.get_cmap(params['colormap'])
+        else:
+            colormap = params['colormap']
     else:
         colormap = mpl.cm.get_cmap('jet') 
 
+    zlim = None
+    if ('zlim' in params):
+        zlim = params['zlim']
+        
+    if ('clim' in params):
+        zlim = params['clim']
+        
     charge_base_units = pmd.units('charge').unitSymbol
     q_total, charge_scale, charge_prefix = nicer_array(pmd.charge)
     q = pmd.weight / charge_scale
@@ -423,9 +435,9 @@ def gpt_plot_dist2d(pmd, var1, var2, plot_type='histogram', units=None, fig=None
     if ('color_var' in params):
         color_var = params['color_var']
     if(plot_type=="scatter"):
-        colorbar_instance = scatter_color(fig_ax[0], fig_ax[1], pmd, x, y, weights=q, color_var=color_var, bins=nbins, colormap=colormap, is_radial_var=is_radial_var)
+        colorbar_instance = scatter_color(fig_ax[0], fig_ax[1], pmd, x, y, weights=q, color_var=color_var, bins=nbins, colormap=colormap, is_radial_var=is_radial_var,zlim=zlim)
     if(plot_type=="histogram"):
-        colorbar_instance = hist2d(fig_ax[0], fig_ax[1], pmd, x, y, weights=q, color_var=color_var, bins=nbins, colormap=colormap, is_radial_var=is_radial_var)
+        colorbar_instance = hist2d(fig_ax[0], fig_ax[1], pmd, x, y, weights=q, color_var=color_var, bins=nbins, colormap=colormap, is_radial_var=is_radial_var,zlim=zlim)
 
     fig_ax[1].set_xlabel(f"{format_label(var1)} ({x_units})")
     fig_ax[1].set_ylabel(f"{format_label(var2)} ({y_units})")
