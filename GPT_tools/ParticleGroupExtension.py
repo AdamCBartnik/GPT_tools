@@ -23,6 +23,7 @@ class ParticleGroupExtension(ParticleGroup):
         super().__init__(data=data)
         
         new_units = {}
+        new_units['transverse_energy'] = 'eV'
         new_units['r_centered'] = 'm'
         new_units['sqrt_norm_emit_4d'] = 'm'
         new_units['root_norm_emit_6d'] = 'm'
@@ -44,7 +45,10 @@ class ParticleGroupExtension(ParticleGroup):
         for k in new_units:
             if (k not in PARTICLEGROUP_UNITS.keys()):
                 PARTICLEGROUP_UNITS[k] = unit(new_units[k])
-         
+    @property
+    def transverse_energy(self):
+        return np.sqrt(self.px**2 + self.py**2 + self.mass**2) - self.mass
+        
     @property
     def ptrans(self):
         return np.sqrt(self.px*self.px + self.py*self.py)

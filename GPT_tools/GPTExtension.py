@@ -173,6 +173,26 @@ def run_gpt_with_THz(settings=None,
                              load_fields=False
                              ):
 
+    if (input_particle_group is None):
+        # Modify settings for input particlegroup as needed
+        if ('final_n_particle' in settings and 'final_charge:value' in settings and 'final_charge:units' in settings and 'total_charge:value' in settings and 'total_charge:units' in settings):
+            # user specifies final n_particles, rather than initial
+            final_charge = settings['final_charge:value'] * unit_registry.parse_expression(settings['final_charge:units'])
+            final_charge = final_charge.to('coulomb').magnitude
+            total_charge = settings['total_charge:value'] * unit_registry.parse_expression(settings['total_charge:units'])
+            total_charge = total_charge.to('coulomb').magnitude
+            n_particle = int(np.ceil(settings['final_n_particle'] * total_charge / final_charge))
+            settings['n_particle'] = int(np.max([n_particle, int(settings['final_n_particle'])]))
+            if(verbose):
+                print(f'<**** Setting n_particle = {n_particle}.\n')
+    
+        # Make initial distribution
+        phasing_input_particle_group = get_cathode_particlegroup(settings, distgen_input_file, verbose=verbose)
+    else:
+        phasing_input_particle_group = input_particle_group
+    
+    phase_PG = get_distgen_beam_for_phasing_from_particlegroup(phasing_input_particle_group, n_particle=10, verbose=False, output_PG = True)
+    
     settings_t0 = copy.copy(settings)
     settings_t0['n_particle'] = 10
     settings_t0['pulse_energy'] = 0
@@ -180,9 +200,10 @@ def run_gpt_with_THz(settings=None,
     settings_t0['n_screens'] = 0
     settings_t0['space_charge'] = 0
     settings_t0['auto_phase'] = 1
+
     gpt_data = run_gpt_with_settings(settings_t0,
+                             input_particle_group = phase_PG,
                              gpt_input_file=gpt_input_file,
-                             distgen_input_file=distgen_input_file,
                              verbose=False,
                              gpt_verbose=False,
                              auto_phase=auto_phase,
@@ -194,6 +215,7 @@ def run_gpt_with_THz(settings=None,
     gpt_data = run_gpt_with_settings(settings,
                              gpt_input_file=gpt_input_file,
                              distgen_input_file=distgen_input_file,
+                             input_particle_group = input_particle_group,
                              verbose=verbose,
                              gpt_verbose=gpt_verbose,
                              auto_phase=auto_phase,
@@ -431,7 +453,7 @@ def run_gpt_with_settings(settings=None,
         used_filter = filter_screen(G_all.screen[-1], settings)
         
     # insert initial particle distribution into list of screens or touts
-    if (input_particle_group['sigma_t'] == 0.0):
+    if (input_particle_group['sigma_t'] == 0.0 and len(input_particle_group)>1):
         # Initial distribution is a tout
         if (G_all.output['n_tout'] > 0):
             # Don't include the cathode if there are no other screens. Screws up optimizations of "final" screen when there is an error
@@ -443,7 +465,7 @@ def run_gpt_with_settings(settings=None,
             # Don't include the cathode if there are no other screens. Screws up optimizations of "final" screen when there is an error
             G_all.output['particles'].insert(G_all.output['n_tout'], input_particle_group)
             G_all.output['n_screen'] = G_all.output['n_screen']+1
-                
+
     return G_all
 
     

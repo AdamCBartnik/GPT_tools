@@ -25,6 +25,7 @@ def make_default_plot(plot_width=700, plot_height=400, dpi = 120, is_table=False
 
 
 def format_label(s, latex=True, use_base=False, add_underscore=True):
+    s = s.replace('mean_transverse_energy', 'MTE')
     if (use_base):
         s = s.replace("mean_", "").replace("sigma_", "").replace("norm_", "").replace("sqrt_", "").replace("slice_", "")
     if (add_underscore):

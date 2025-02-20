@@ -41,7 +41,7 @@ def gpt_plot_gui(gpt_data_input):
         screen_z_dropdown = widgets.Dropdown(options=[(f'{z:.3f}', i) for (i,z) in enumerate(special_z_list)], layout=layout_150px)
     
     trend_x_list = ['z', 't']
-    trend_y_list = ['Beam Size', 'Bunch Length', 'Emittance (x,y)', 'Emittance (4D)', 'Slice emit. (x,y)', 'Slice emit. (4D)', 'Charge', 'Kinetic Energy', 'Energy Spread', 'Trajectory']
+    trend_y_list = ['Beam Size', 'Bunch Length', 'Emittance (x,y)', 'Emittance (4D)', 'Slice emit. (x,y)', 'Slice emit. (4D)', 'Charge', 'Kinetic Energy', 'Energy Spread', 'Trajectory', 'MTE']
     trend_x_dropdown = widgets.Dropdown(options=[(a, i) for (i,a) in enumerate(trend_x_list)], value=0, layout=layout_150px)
     trend_y_dropdown = widgets.Dropdown(options=[(a, i) for (i,a) in enumerate(trend_y_list)], value=0, layout=layout_150px)
     trend_slice_var_dropdown = widgets.Dropdown(options=[(a, i) for (i,a) in enumerate(dist_list)], value=0, layout=layout_150px)
@@ -471,6 +471,8 @@ def get_trend_vars(trend_y):
         var=['mean_x', 'mean_y']
     if (trend_y == 'charge'):
         var='mean_charge'
+    if (trend_y == 'mte'):
+        var='mean_transverse_energy'
     
     return var
         

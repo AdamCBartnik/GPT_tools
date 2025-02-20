@@ -106,6 +106,10 @@ def gpt_plot(gpt_data_input, var1, var2, units=None, fig_ax=None, format_input_d
             print('Incorrect units specified')
             units = None
 
+    # Make sure the order of the x values is monotonic
+    xi = np.argsort(x)
+    x = x[xi]
+            
     # Finally, actually plot the data
     if (return_data):
         output_data = np.array([x])
@@ -119,6 +123,7 @@ def gpt_plot(gpt_data_input, var1, var2, units=None, fig_ax=None, format_input_d
     
     for i, var in enumerate(var2):
         y = gpt_data.stat(var, 'screen') / y_scale
+        y = y[xi]
         if (auto_legend):
             legend_name = f'{format_label(var)}'
         
@@ -243,7 +248,10 @@ def gpt_plot_dist1d(pmd, var, plot_type='charge', units=None, fig_ax=None, table
     q = pmd.weight / charge_scale
     q_units = check_mu(charge_prefix)+charge_base_units
     
-    subtract_mean=check_subtract_mean(var)
+    if ('subtract_mean' in params):
+        subtract_mean = params['subtract_mean']
+    else:
+        subtract_mean=check_subtract_mean(var)
     (x, x_units, x_scale, mean_x, mean_x_units, mean_x_scale) = scale_mean_and_get_units(getattr(pmd, var), pmd.units(var).unitSymbol,
                                                                                          subtract_mean=subtract_mean, weights=q)
     p_list, edges, density_norm = divide_particles(pmd, nbins=nbins, key=var)
@@ -282,7 +290,12 @@ def gpt_plot_dist1d(pmd, var, plot_type='charge', units=None, fig_ax=None, table
     if (not is_radial_var):
         edges, hist = pad_data_with_zeros(edges, hist)
 
-    line_list = fig_ax[1].plot(edges, hist, '-', color=cmap[0], label=f'{format_label(var)}')
+    if ('color' in params):
+        plot_color = params['color']
+    else:
+        plot_color = cmap[0]
+
+    line_list = fig_ax[1].plot(edges, hist, '-', color=plot_color, label=f'{format_label(var)}')
             
     fig_ax[1].set_xlabel(f"{format_label(var)} ({x_units})")
     
