@@ -27,7 +27,7 @@ def gpt_plot_gui(gpt_data_input):
     label_layout = layout_150px
     
     # Make widgets
-    dist_list = ['t','x','y','z','r_centered','px','py','pz','pr_centered','ptrans','action_x','action_y','action_4d']
+    dist_list = ['t','x','y','z','r_centered','px','py','pz','pr_centered','ptrans','action_x','action_y','action_4d','kinetic_energy']
     
     plottype_list = ['Trends', '1D Distribution', '2D Distribution']
     plottype_dropdown = widgets.Dropdown(options=[(a, i) for (i,a) in enumerate(plottype_list)], value=0)
@@ -268,23 +268,23 @@ def gpt_plot_gui(gpt_data_input):
 
     def fill_screen_list(change):
         if (screen_type_dropdown.label.lower() == 'all'):
-            screen_z_dropdown.options = [(f'{z:.3f}', i) for (i,z) in enumerate(screen_z_list)]
+            screen_z_dropdown.options = [(f'{z:.6f}', i) for (i,z) in enumerate(screen_z_list)]  #changed from 3 to 6, because better
         if (screen_type_dropdown.label.lower() == 'special'):
-            screen_z_dropdown.options = [(f'{z:.3f}', i) for (i,z) in enumerate(special_z_list)]
+            screen_z_dropdown.options = [(f'{z:.6f}', i) for (i,z) in enumerate(special_z_list)]  #changed from 3 to 6, because better
         make_plot()
         
     def dist2d_color_fill_screen_list(change):
         if (dist2d_color_screen_type_dropdown.label.lower() == 'all'):
-            dist2d_color_screen_z_dropdown.options = [(f'{z:.3f}', i) for (i,z) in enumerate(screen_z_list)]
+            dist2d_color_screen_z_dropdown.options = [(f'{z:.6f}', i) for (i,z) in enumerate(screen_z_list)]  #changed from 3 to 6, because better
         if (dist2d_color_screen_type_dropdown.label.lower() == 'special'):
-            dist2d_color_screen_z_dropdown.options = [(f'{z:.3f}', i) for (i,z) in enumerate(special_z_list)]
+            dist2d_color_screen_z_dropdown.options = [(f'{z:.6f}', i) for (i,z) in enumerate(special_z_list)]  #changed from 3 to 6, because better
         make_plot()
         
     def dist_y_fill_screen_list(change):
         if (dist_y_screen_type_dropdown.label.lower() == 'all'):
-            dist_y_screen_z_dropdown.options = [(f'{z:.3f}', i) for (i,z) in enumerate(screen_z_list)]
+            dist_y_screen_z_dropdown.options = [(f'{z:.6f}', i) for (i,z) in enumerate(screen_z_list)]
         if (dist_y_screen_type_dropdown.label.lower() == 'special'):
-            dist_y_screen_z_dropdown.options = [(f'{z:.3f}', i) for (i,z) in enumerate(special_z_list)]
+            dist_y_screen_z_dropdown.options = [(f'{z:.6f}', i) for (i,z) in enumerate(special_z_list)]
         make_plot()
         
     # Widget layout within GUI

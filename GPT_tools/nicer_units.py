@@ -16,7 +16,7 @@ def nicer_scale_prefix(scale, mm_cutoff=0.1):
     if (np.all(np.isnan(scale))):
         return 1, ''
     
-    max_val = np.nanmax(np.abs(scale))
+    max_val = np.nanmedian(np.abs(scale))   # median is the new max
         
     if max_val < 1e-28:
         return 1, ''
