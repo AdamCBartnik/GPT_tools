@@ -118,7 +118,7 @@ def getEexc(settings, modify_settings=True, verbose=True):
     kT = getValueFromSettings(settings, 'kT', 'eV', modify_settings=modify_settings, verbose=verbose)
     gun_field = getValueFromSettings(settings, 'gun_field', 'V/m', modify_settings=modify_settings, verbose=verbose)
     plummer_radius = getValueFromSettings(settings, 'plummer_radius', 'm', modify_settings=modify_settings, verbose=verbose)
-            
+                    
     if (MTE <= 1.096144454*kT):
         if (verbose):
             print(f'MTE must be larger than 9*zeta(3)/pi^2*kT = {1.096144454*kT}')

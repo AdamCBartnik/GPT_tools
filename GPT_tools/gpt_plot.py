@@ -254,6 +254,18 @@ def gpt_plot_dist1d(pmd, var, plot_type='charge', units=None, fig_ax=None, table
         subtract_mean=check_subtract_mean(var)
     (x, x_units, x_scale, mean_x, mean_x_units, mean_x_scale) = scale_mean_and_get_units(getattr(pmd, var), pmd.units(var).unitSymbol,
                                                                                          subtract_mean=subtract_mean, weights=q)
+    
+    if (units is not None):       
+        # Replace X units
+        base_units = pmd.units(var).unitSymbol
+        if (units.endswith(base_units)):
+            x = x * x_scale
+            x_units = units
+            x_scale = SHORT_PREFIX_FACTOR[units[:-len(base_units)]]
+            x = x / x_scale
+        else:
+            print('Incorrect units specified')
+    
     p_list, edges, density_norm = divide_particles(pmd, nbins=nbins, key=var)
     
     is_radial_var = False
@@ -429,6 +441,32 @@ def gpt_plot_dist2d(pmd, var1, var2, plot_type='histogram', units=None, fig=None
     if (not isinstance(y_subtract_mean, bool)):
         y_subtract_mean = check_subtract_mean(var2)
     (y, y_units, y_scale, avgy, avgy_units, avgy_scale) = scale_mean_and_get_units(y, pmd2.units(var2).unitSymbol, subtract_mean=y_subtract_mean, weights=q_y)
+        
+    # overwrite with user units
+    if (units is not None):
+        user_x_units = units[0]
+        user_y_units = units[1]
+        
+        # Replace X units
+        base_units = pmd.units(var1).unitSymbol
+        if (user_x_units.endswith(base_units)):
+            x = x * x_scale
+            x_units = user_x_units
+            x_scale = SHORT_PREFIX_FACTOR[user_x_units[:-len(base_units)]]
+            x = x / x_scale
+        else:
+            print('Incorrect units specified')
+        
+        # Replace Y units
+        base_units = pmd.units(var2).unitSymbol
+        if (user_y_units.endswith(base_units)):
+            y = y * y_scale
+            y_units = user_y_units
+            y_scale = SHORT_PREFIX_FACTOR[user_y_units[:-len(base_units)]]
+            y = y / y_scale
+        else:
+            print('Incorrect units specified')
+
         
     if('axis' in params and params['axis']=='equal'):
         if (x_scale > y_scale):

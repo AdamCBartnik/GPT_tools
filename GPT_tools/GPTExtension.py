@@ -1,4 +1,4 @@
-import time, os, copy, numbers
+import time, os, copy, numbers, psutil
 import numpy as np
 import re
 from gpt import GPT
@@ -12,7 +12,10 @@ from .postprocess import kill_zero_weight, clip_to_charge, take_range, clip_to_e
 from .cathode_particlegroup import get_coreshield_particlegroup, get_cathode_particlegroup
 from pint import UnitRegistry
 import matplotlib.pyplot as plt
-
+import concurrent.futures
+from functools import partial
+from .image_charge import get_blank_particlegroup
+from sympy import divisors
 
 def evaluate_run_gpt_with_settings(settings,
                                      archive_path=None,
@@ -592,9 +595,219 @@ def default_gpt_merit(G):
         
     return m
 
+def split_particle_group(PG, N, P):
+    M = len(PG) // N  # Total number of N-sized arrays
+    arr = np.arange(0, len(PG))
+    reshaped = arr.reshape(M, N)  # Reshape into M rows of N elements each
+
+    # Split into P approximately equal groups
+    chunk_sizes = np.array_split(range(M), P)
+    groups = [[PG[reshaped[i]] for i in indices] for indices in chunk_sizes]
+    
+    return groups
 
 
+def keep_only_last_forward_pass(PG_input):
+    if (len(PG_input) == 0):
+        return PG_input
+    unique_ids, counts = np.unique(PG_input.id, return_counts=True)
+    repeated_ids = unique_ids[counts > 1]
+    indices_to_keep = []
+    for i, id_ in enumerate(PG_input.id):
+        # If the ID occurs only once, add its index to the list
+        if counts[np.where(unique_ids == id_)[0][0]] == 1:
+            indices_to_keep.append(i)
+        # If the ID is repeated, check for the max time
+        elif id_ in repeated_ids:
+            # Find the indices of the repeated ID
+            indices_of_id = np.where(PG_input.id == id_)[0]
 
+            # Find the index with the maximum time for this ID
+            max_time_index = indices_of_id[np.argmax(PG_input.t[indices_of_id])]
+
+            # Add that index to the list if it's not already added
+            if max_time_index not in indices_to_keep:
+                indices_to_keep.append(max_time_index)
+    indices_to_keep = np.array(indices_to_keep)
+    return PG_input[indices_to_keep]
+
+def run_one_thread(settings_input, 
+                     PG_list, 
+                     gpt_input_file=None,
+                     input_particle_group=None,
+                     keep_only_last_pass=True,
+                     workdir=None, 
+                     use_tempdir=True,
+                     gpt_bin='$GPT_BIN',
+                     timeout=2500,
+                     auto_phase=False,
+                     verbose=False,
+                     gpt_verbose=False,
+                     asci2gdf_bin='$ASCI2GDF_BIN',
+                     kill_msgs=[],
+                     load_fields=False):
+    g_list = []
+    for PG_temp in PG_list:
+        g = run_gpt_with_settings(settings_input,
+                     gpt_input_file=gpt_input_file,
+                     input_particle_group=PG_temp,
+                     workdir=workdir, 
+                     use_tempdir=use_tempdir,
+                     gpt_bin=gpt_bin,
+                     timeout=timeout,
+                     auto_phase=auto_phase,
+                     verbose=verbose,
+                     gpt_verbose=gpt_verbose,
+                     asci2gdf_bin=asci2gdf_bin,
+                     kill_msgs=kill_msgs,
+                     load_fields=load_fields)
+        if (len(g.screen)==0):
+            # If no screens are made by GPT, then initial dist is not included. So, add it here
+            # This happens when particles are lost before first screen output
+            g.output['particles'].insert(g.output['n_tout'], PG_temp)
+            g.output['n_screen'] = g.output['n_screen']+1
+
+        if (keep_only_last_pass):
+            # If a particle passes a screen more than once, we only keep its position the last time it went forward
+            # This can help plots that show charge vs. z, for example
+            for ii, s in enumerate(g.particles):
+                s = s[s.pz > 0]
+                s = keep_only_last_forward_pass(s)
+                g.particles[ii] = s
+        g_list = g_list + [g]
+    return g_list
+
+def smallest_factor_geq(P, M):
+    # returns the smallest divisor of P than is >= M
+    return next((d for d in divisors(P) if d >= M), None)
+
+def multithread_gpt_with_settings(settings=None,
+                             gpt_input_file=None,
+                             input_particle_group=None,
+                             n_threads=None,
+                             num_particles_per_run=None,
+                             keep_only_last_pass=True,
+                             workdir=None, 
+                             use_tempdir=True,
+                             gpt_bin='$GPT_BIN',
+                             timeout=2500,
+                             auto_phase=False,
+                             verbose=False,
+                             gpt_verbose=False,
+                             asci2gdf_bin='$ASCI2GDF_BIN',
+                             kill_msgs=[],
+                             load_fields=False
+                             ):
+    
+
+    settings_copy = copy.copy(settings)
+    
+    if (n_threads is None):
+        # Default is to use everybody
+        n_threads = psutil.cpu_count(logical=True)
+        if (verbose):
+            print('Using maximum of {n_threads} threads...')
+    
+    if (num_particles_per_run is None):
+        num_particles_per_run = smallest_factor_geq(len(input_particle_group), len(input_particle_group)/n_threads)
+        if (verbose):
+            print(f'Dividing particlegroup into groups of {num_particles_per_run} particles...')
+    
+    if (len(input_particle_group) % num_particles_per_run != 0):
+        # I consider this an error, since sometimes I really want to run precisely N particles at a time and nothing else
+        raise ValueError(f'Number of particles per run ({num_particles_per_run}) should evenly divide total number of particles ({len(input_particle_group)}).')
+    
+    if (verbose):
+        print(f'Running {int(len(input_particle_group)/num_particles_per_run)} evaluations of {num_particles_per_run} particles on {n_threads} threads: --------------------------')
+
+    PG_groups = split_particle_group(input_particle_group, num_particles_per_run, n_threads)
+    settings_copy['n_particle'] = int(num_particles_per_run)
+
+    if (verbose):
+        print('Running GPT(s)....')
+
+    wrapped_func = partial(run_one_thread, 
+                     gpt_input_file=gpt_input_file,
+                     input_particle_group=input_particle_group,
+                     keep_only_last_pass=keep_only_last_pass,
+                     workdir=workdir, 
+                     use_tempdir=use_tempdir,
+                     gpt_bin=gpt_bin,
+                     timeout=timeout,
+                     auto_phase=auto_phase,
+                     verbose=False,
+                     gpt_verbose=False,
+                     asci2gdf_bin=asci2gdf_bin,
+                     kill_msgs=kill_msgs,
+                     load_fields=load_fields)
+        
+    with concurrent.futures.ProcessPoolExecutor(max_workers=n_threads) as executor:
+        gpt_data_list = list(executor.map(wrapped_func, [settings_copy] * n_threads, PG_groups))
+
+    gpt_data_list = [item for sublist in gpt_data_list for item in sublist] # flatten list of lists
+
+    if (verbose):
+        print('Done.')
+        print('Combining all gpt runs into single object...')
+
+    n_screen_list = np.array([len(g.screen) for g in gpt_data_list])
+    gpt_data = copy.deepcopy(gpt_data_list[np.argmax(n_screen_list)])
+    z_list = gpt_data.stat('mean_z')
+    dz_list = np.diff(np.sort(z_list))
+    dz_list = dz_list[dz_list>0.0]
+    if (len(dz_list) > 0):
+        ztol = np.min(dz_list)/100 # 100x smaller than smallest (nonzero) spacing between screens
+    else:
+        ztol = 1.0e-6 # when there was only a single screen location originally
+
+    # Make placeholder empty particlegroups to fill in
+    p = get_blank_particlegroup(len(input_particle_group))
+    p.weight = np.nan
+    p.id = input_particle_group.id
+
+    for ii in np.arange(0,len(gpt_data.particles)):
+        gpt_data.particles[ii] = copy.deepcopy(p)
+
+    # If you have particle IDs that are huge numbers, this may kill your memory
+    # Could be replaced with a (much slower) dictionary lookup if that's a problem
+    int_id = [int(idii) for idii in input_particle_group.id]
+    inverse_map = np.full(np.max(int_id) + 1, -1, dtype=int)
+    inverse_map[int_id] = np.arange(len(int_id))
+
+    for g in gpt_data_list:
+        for s in g.screen:
+            if (len(s) > 0):
+                z = s.z[0]
+                which_screen = np.argmin(np.abs(z-z_list))
+                if (np.abs(z_list[which_screen] - z) < ztol):
+                    int_id = [int(idii) for idii in s.id]
+                    p_ii = inverse_map[int_id]
+                    if (np.count_nonzero(p_ii == -1) > 0):
+                        raise ValueError("Unexpected ID")
+                    gpt_data.particles[which_screen].x[p_ii] = s.x
+                    gpt_data.particles[which_screen].y[p_ii] = s.y
+                    gpt_data.particles[which_screen].z[p_ii] = s.z
+                    gpt_data.particles[which_screen].px[p_ii] = s.px
+                    gpt_data.particles[which_screen].py[p_ii] = s.py
+                    gpt_data.particles[which_screen].pz[p_ii] = s.pz
+                    gpt_data.particles[which_screen].t[p_ii] = s.t
+                    gpt_data.particles[which_screen].weight[p_ii] = s.weight
+
+    # Any particles that were lost along the way will have placeholders in screens with weight == nan, remove those
+    for ii, p in enumerate(gpt_data.particles):
+        if (np.count_nonzero(p.weight == 0.0) > 0):
+            gpt_data.particles[ii] = p[~np.isnan(p.weight)]
+
+    if (verbose):
+        print('Done.')
+
+    return gpt_data
+
+# ---------------------------------------------------------------------------
+# Below here are older (obsolete) versions of the main run function
+# ---------------------------------------------------------------------------
+
+        
 
 def run_gpt_with_particlegroup(settings=None,
                              gpt_input_file=None,
@@ -711,8 +924,6 @@ def run_gpt_with_particlegroup(settings=None,
     
     
     return G
-
-
 
 
 

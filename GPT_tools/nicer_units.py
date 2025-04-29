@@ -1,5 +1,5 @@
 import numpy as np
-
+import copy
 
 def nicer_scale_prefix(scale, mm_cutoff=0.1):
     """
@@ -16,7 +16,9 @@ def nicer_scale_prefix(scale, mm_cutoff=0.1):
     if (np.all(np.isnan(scale))):
         return 1, ''
     
-    max_val = np.nanmedian(np.abs(scale))   # median is the new max
+    scale_med_sub = copy.copy(scale)
+    scale_med_sub = scale - np.nanmedian(scale)
+    max_val = np.nanmedian(np.abs(scale_med_sub))
         
     if max_val < 1e-28:
         return 1, ''
