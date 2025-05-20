@@ -792,12 +792,14 @@ def multithread_gpt_with_settings(settings=None,
                     gpt_data.particles[which_screen].pz[p_ii] = s.pz
                     gpt_data.particles[which_screen].t[p_ii] = s.t
                     gpt_data.particles[which_screen].weight[p_ii] = s.weight
-
+ 
     # Any particles that were lost along the way will have placeholders in screens with weight == nan, remove those
     for ii, p in enumerate(gpt_data.particles):
-        if (np.count_nonzero(p.weight == 0.0) > 0):
+        if (np.count_nonzero(np.isnan(p.weight)) > 0):
+            g_id = p.id[~np.isnan(p.weight)] # IDs seem to get messed up in this for loop, so make a backup
             gpt_data.particles[ii] = p[~np.isnan(p.weight)]
-
+            gpt_data.particles[ii].id = g_id # shouldn't have to do this... 
+            
     if (verbose):
         print('Done.')
 

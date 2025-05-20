@@ -202,7 +202,7 @@ def gpt_plot(gpt_data_input, var1, var2, units=None, fig_ax=None, format_input_d
     
 
 
-def gpt_plot_dist1d(pmd, var, plot_type='charge', units=None, fig_ax=None, table_fig=None, table_on=True, **params):
+def gpt_plot_dist1d(pmd, var, plot_type='charge', units=None, fig_ax=None, table_fig=None, table_on=True, subtract_mean='auto', **params):
     screen_key = None
     screen_value = None
     if (isinstance(pmd, GPT)):
@@ -246,12 +246,17 @@ def gpt_plot_dist1d(pmd, var, plot_type='charge', units=None, fig_ax=None, table
     charge_base_units = pmd.units('charge').unitSymbol
     q_total, charge_scale, charge_prefix = nicer_array(pmd.charge)
     q = pmd.weight / charge_scale
-    q_units = check_mu(charge_prefix)+charge_base_units
+    q_units = check_mu(charge_prefix)+charge_base_units   
     
-    if ('subtract_mean' in params):
-        subtract_mean = params['subtract_mean']
-    else:
-        subtract_mean=check_subtract_mean(var)
+    user_reference = None
+    if (isinstance(subtract_mean, float)):
+        # User wants to subtract a precise number, not the mean
+        user_reference = subtract_mean
+        subtract_mean = False
+    
+    if (not isinstance(subtract_mean, bool)):
+        subtract_mean = check_subtract_mean(var)
+    
     (x, x_units, x_scale, mean_x, mean_x_units, mean_x_scale) = scale_mean_and_get_units(getattr(pmd, var), pmd.units(var).unitSymbol,
                                                                                          subtract_mean=subtract_mean, weights=q)
     
@@ -266,6 +271,10 @@ def gpt_plot_dist1d(pmd, var, plot_type='charge', units=None, fig_ax=None, table
         else:
             print('Incorrect units specified')
     
+    # Assume user supplied values to subtract in units that were plotted, or that they specified
+    if (user_reference is not None):
+        x = (x*x_scale - user_reference)/x_scale
+    
     p_list, edges, density_norm = divide_particles(pmd, nbins=nbins, key=var)
     
     is_radial_var = False
@@ -279,6 +288,8 @@ def gpt_plot_dist1d(pmd, var, plot_type='charge', units=None, fig_ax=None, table
     
     if (subtract_mean==True):
         edges = edges - mean_x*mean_x_scale
+    if (user_reference is not None):
+        edges = edges - user_reference
     edges = edges/x_scale
     
     plot_type_base_units = pmd.units(plot_type).unitSymbol
@@ -424,11 +435,17 @@ def gpt_plot_dist2d(pmd, var1, var2, plot_type='histogram', units=None, fig=None
     q = pmd.weight / charge_scale
     q_units = check_mu(charge_prefix)+charge_base_units
     
+    user_x_reference = None
+    if (isinstance(x_subtract_mean, float)):
+        # User wants to subtract a precise number, not the mean
+        user_x_reference = x_subtract_mean
+        x_subtract_mean = False
+    
     if (not isinstance(x_subtract_mean, bool)):
         x_subtract_mean = check_subtract_mean(var1)
     
     (x, x_units, x_scale, avgx, avgx_units, avgx_scale) = scale_mean_and_get_units(getattr(pmd, var1), pmd.units(var1).unitSymbol, subtract_mean=x_subtract_mean, weights=q)
-    
+            
     y = getattr(pmd2, var2)
     q_y = pmd2.weight / charge_scale
     if (use_separate_data):
@@ -438,10 +455,16 @@ def gpt_plot_dist2d(pmd, var1, var2, plot_type='histogram', units=None, fig=None
         y = np.array([y[y_dict[id]] if id in y_dict else 0.0 for id in pmd.id])  # The value on failure here doesn't matter since it will have weight = 0
         q_y = np.array([q_y[y_dict[id]] if id in y_dict else 0.0 for id in pmd.id])
     
+    user_y_reference = None
+    if (isinstance(y_subtract_mean, float)):
+        # User wants to subtract a precise number, not the mean
+        user_y_reference = y_subtract_mean
+        y_subtract_mean = False
+        
     if (not isinstance(y_subtract_mean, bool)):
         y_subtract_mean = check_subtract_mean(var2)
     (y, y_units, y_scale, avgy, avgy_units, avgy_scale) = scale_mean_and_get_units(y, pmd2.units(var2).unitSymbol, subtract_mean=y_subtract_mean, weights=q_y)
-        
+            
     # overwrite with user units
     if (units is not None):
         user_x_units = units[0]
@@ -467,6 +490,11 @@ def gpt_plot_dist2d(pmd, var1, var2, plot_type='histogram', units=None, fig=None
         else:
             print('Incorrect units specified')
 
+    if (user_x_reference is not None):
+        x = (x*x_scale - user_x_reference)/x_scale
+    
+    if (user_y_reference is not None):
+        y = (y*y_scale - user_y_reference)/y_scale
         
     if('axis' in params and params['axis']=='equal'):
         if (x_scale > y_scale):

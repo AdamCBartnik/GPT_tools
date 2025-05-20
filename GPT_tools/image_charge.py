@@ -118,7 +118,12 @@ def getEexc(settings, modify_settings=True, verbose=True):
     kT = getValueFromSettings(settings, 'kT', 'eV', modify_settings=modify_settings, verbose=verbose)
     gun_field = getValueFromSettings(settings, 'gun_field', 'V/m', modify_settings=modify_settings, verbose=verbose)
     plummer_radius = getValueFromSettings(settings, 'plummer_radius', 'm', modify_settings=modify_settings, verbose=verbose)
-                    
+        
+    if (gun_field < 0):
+        if (verbose):
+            print('Warning: changing sign of gun field')
+        gun_field = np.abs(gun_field)
+        
     if (MTE <= 1.096144454*kT):
         if (verbose):
             print(f'MTE must be larger than 9*zeta(3)/pi^2*kT = {1.096144454*kT}')
@@ -143,11 +148,6 @@ def getEexc(settings, modify_settings=True, verbose=True):
     else:
         z0 = getValueFromSettings(settings, 'cathode_z_offset', 'm', modify_settings=modify_settings, verbose=verbose)
 
-    if (gun_field < 0):
-        if (verbose):
-            print('Warning: changing sign of gun field')
-        gun_field = np.abs(gun_field)
-        
     zpeak = PeakPotentialz(gun_field, z0, plummer_radius)
     barrierV = ImagePotential(zpeak, z0, plummer_radius, gun_field) - ImagePotential(0, z0, plummer_radius, gun_field)
     EexcAtSurface = EexcAtPeak + barrierV
@@ -324,4 +324,8 @@ def get_blank_particlegroup(n_particle, verbose=False):
     gen = Generator(phasing_distgen_input, verbose=verbose) 
     gen.run()
     PG = gen.particles
+    
+    PG._settable_array_keys.append("id")
+    PG.id = np.arange(1, n_particle+1)
+    
     return PG
