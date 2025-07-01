@@ -4,12 +4,13 @@ import numpy as np
 import scipy
 
 import copy
+   
 
 
-def make_parabolic_guess(n_mirrors, settings, scr, scr2, use_ideal_size=True):
-       
+def make_parabolic_guess(n_mirrors, settings, scr, use_ideal_size=True):
+    
     new_settings = copy.copy(settings)
-        
+    
     omega0 = 2*np.pi*settings['center_frequency']
     sigt = settings['sig_t']
     tht = np.radians(settings['theta_THz'])
@@ -49,6 +50,11 @@ def make_parabolic_guess(n_mirrors, settings, scr, scr2, use_ideal_size=True):
     new_settings['E02'] = dp2 / A
     new_settings['sig_x2'] = w2 / 2
     new_settings['dt2'] = dt
+    
+    if (n_mirrors == 3):
+        new_settings['E03'] = 0.0
+        new_settings['sig_x3'] = settings['sig_x3'] 
+        new_settings['dt3'] = dt
     
     return new_settings
 
@@ -154,9 +160,8 @@ def get_pulse_energy(settings, which_screen):
     return E0**2 * np.pi**1.5 * w0**2 * sigt * (1 + np.exp(-2.0*sigt**2*omega0**2)*np.cos(2.0*phi0)) / (2.0 * np.sqrt(2.0) * c * mu0)
 
 
-def get_analytic_scr_para(settings, scr, scr2, guess=None, do_quad=False):
+def get_analytic_scr_para(settings, scr, guess=None, do_quad=False):
     scr_new = copy.deepcopy(scr)
-    scr2_new = copy.deepcopy(scr2)
     
     s = guess_to_settings(guess, settings)    
 
@@ -185,9 +190,9 @@ def get_analytic_scr_para(settings, scr, scr2, guess=None, do_quad=False):
     else:
         scr_new.pz = scr_new.pz + dpzParabola(E0, x, y, t, omega0, sigt, tht, thb, phi0, beta, w0)
     
-    x2 = scr2_new.x
-    y2 = scr2_new.y
-    t2 = scr2_new.t - scr2_new['mean_t'] - s['dt2']
+    x2 = scr_new.x
+    y2 = scr_new.y
+    t2 = scr_new.t - scr_new['mean_t'] - s['dt2']
     
     if (np.abs(E02) > 0.0):
         if (do_quad):
@@ -195,14 +200,32 @@ def get_analytic_scr_para(settings, scr, scr2, guess=None, do_quad=False):
         else:
             scr_new.pz = scr_new.pz + dpzParabola(E02, x2, y2, t2, omega0, sigt, tht, thb, phi02, beta, w02)
 
+    if ('sig_x3' in s.keys()):
+        w03 = s['sig_x3']*2
+        phi03 = np.radians(s['phi03'])
+        E03 = s['E03']
+        
+        x3 = scr_new.x
+        y3 = scr_new.y
+        t3 = scr_new.t - scr_new['mean_t'] - s['dt3']
+        
+        if (do_quad):
+            scr_new.pz = scr_new.pz + dpzQuad(E03, x3, y3, t3, omega0, sigt, tht, thb, phi03, beta, w03)
+        else:
+            scr_new.pz = scr_new.pz + dpzParabola(E03, x3, y3, t3, omega0, sigt, tht, thb, phi03, beta, w03)
+        
     return scr_new
 
-def get_analytic_scr(settings, scr, scr2, guess=None):
+def get_analytic_scr(settings, scr, guess=None, force_dt=None):
     scr_new = copy.deepcopy(scr)
-    scr2_new = copy.deepcopy(scr2)
     
-    s = guess_to_settings(guess, settings)    
+    s = guess_to_settings(guess, settings)
 
+    if (force_dt is not None):
+        s['dt'] = force_dt
+        s['dt2'] = force_dt
+        s['dt3'] = force_dt
+    
     omega0 = 2*np.pi*s['center_frequency']
     tht = np.radians(s['theta_THz'])
     thb = np.radians(s['theta_beam'])
@@ -218,19 +241,31 @@ def get_analytic_scr(settings, scr, scr2, guess=None):
     w02 = s['sig_x2']*2
     phi02 = np.radians(s['phi02'])
     E02 = s['E02']
-
+    
     x = scr_new.x
     y = scr_new.y
     t = scr_new.t - scr_new['mean_t'] - s['dt']
     
     scr_new.pz = scr_new.pz + dpz(E0, x, y, t, omega0, sigt, tht, thb, phi0, beta, w0)
     
-    x2 = scr2_new.x
-    y2 = scr2_new.y
-    t2 = scr2_new.t - scr2_new['mean_t'] - s['dt2']
+    x2 = scr_new.x
+    y2 = scr_new.y
+    t2 = scr_new.t - scr_new['mean_t'] - s['dt2']
     
     scr_new.pz = scr_new.pz + dpz(E02, x2, y2, t2, omega0, sigt, tht, thb, phi02, beta, w02)
 
+    if ('sig_x3' in s.keys()):
+        w03 = s['sig_x3']*2
+        phi03 = np.radians(s['phi03'])
+        E03 = s['E03']
+        
+        x3 = scr_new.x
+        y3 = scr_new.y
+        t3 = scr_new.t - scr_new['mean_t'] - s['dt3']
+        
+        scr_new.pz = scr_new.pz + dpz(E03, x3, y3, t3, omega0, sigt, tht, thb, phi03, beta, w03)
+
+    
     return scr_new
 
 
@@ -249,8 +284,6 @@ def get_gpt_scr(settings, guess=None):
     
     print(f'{1e3*sigE:.2f} , {guess}')
     return get_screen_data(gpt_data_temp, screen_z=s["z_screen_1"])[0]
-
-
 
 def subtract_paraboloid(scr, x):
     scr_new = copy.deepcopy(scr)
@@ -280,6 +313,13 @@ def guess_to_settings(x, settings):
             s['sig_x2'] = x[5] * 1.0e-3
         else:
             s['E02'] = 0.0
+            
+        if (len(x) > 6):
+            s['E03'] = x[6] * 10000
+            s['dt3'] = x[7] / 1e12
+            s['sig_x3'] = x[8] * 1.0e-3
+        else:
+            s['E03'] = 0.0
     return s
 
 def settings_to_guess(s, n_mirror):
@@ -294,7 +334,14 @@ def settings_to_guess(s, n_mirror):
     x4 = s['dt2'] * 1e12
     x5 = s['sig_x2'] / 1.0e-3
     
-    return [x0, x1, x2, x3, x4, x5]
+    if n_mirror == 2:
+        return [x0, x1, x2, x3, x4, x5]
+    
+    x6 = s['E03'] / 10000
+    x7 = s['dt3'] * 1e12
+    x8 = s['sig_x3'] / 1.0e-3
+    
+    return [x0, x1, x2, x3, x4, x5, x6, x7, x8]
 
 
 def best_fit_paraboloid(scr, var='kinetic_energy'):   

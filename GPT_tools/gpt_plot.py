@@ -606,7 +606,7 @@ def gpt_plot_trajectory(gpt_data_input, var1, var2, fig_ax=None, format_input_da
         show_plot = False
         fig_ax[0].set_size_inches(600/fig_ax[0].dpi, 400/fig_ax[0].dpi)
 
-    plot_ids = gpt_data_input.screen[0].id
+    plot_ids = list(set(item for obj in gpt_data_input.screen for item in obj.id)) # All IDs in any screens
         
     if (show_survivors_at_z is not None):
         survivor_params = copy.copy(params)

@@ -158,6 +158,11 @@ def special_screens(z_input, decimals=6, min_length=10):
             z = z_new
         
     special_indices = [i for i, zz in enumerate(z_copy) if zz in special_z ]
+    
+    # Force last screen in list
+    if (np.argmax(z_copy) not in special_indices):
+        special_indices.append(np.argmax(z_copy))
+    
     return special_indices
 
 

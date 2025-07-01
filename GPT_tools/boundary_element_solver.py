@@ -384,7 +384,7 @@ def arc_to_segments(x1, y1, x2, y2, xc, yc, max_seg_length):
     return np.column_stack((x_points[:-1], y_points[:-1], x_points[1:], y_points[1:]))
 
 
-def plot_geometry(elements, fig_ax=None, axis='equal'):
+def plot_geometry(elements, fig_ax=None, axis='equal', plot_type='-'):
     if (fig_ax is None):
         fig, ax = plt.subplots()
     else:
@@ -395,11 +395,10 @@ def plot_geometry(elements, fig_ax=None, axis='equal'):
         x = [p[0] for p in e]
         y = [p[1] for p in e]
                 
-        ax.plot(x, y, '-')
+        ax.plot(x, y, plot_type)
         
         if (axis):
             ax.set_aspect(axis)
-        ax.set_title("Poisson Geometry")
 
 # --------------------------------------------------------------------------------------------------
 #   BOUNDARY ELEMENT SOLVER SECTION     
