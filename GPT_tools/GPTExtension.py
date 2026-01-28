@@ -16,6 +16,7 @@ import concurrent.futures
 from functools import partial
 from .image_charge import get_blank_particlegroup
 from sympy import divisors
+from .THz_functions import get_analytic_scr, settings_to_guess
 
 def evaluate_run_gpt_with_settings(settings,
                                      archive_path=None,
@@ -159,6 +160,150 @@ def evaluate_run_gpt_with_THz(settings,
     return output
         
 
+def evaluate_run_gpt_with_analytic_THz(settings,
+                                 archive_path=None,
+                                 merit_f=None, 
+                                 gpt_input_file=None,
+                                 distgen_input_file=None,
+                                 workdir=None, 
+                                 use_tempdir=True,
+                                 gpt_bin='$GPT_BIN',
+                                 timeout=2500,
+                                 auto_phase=False,
+                                 verbose=False,
+                                 gpt_verbose=False,
+                                 asci2gdf_bin='$ASCI2GDF_BIN',
+                                 debug=False):    
+    """
+    Will raise an exception if there is an error. 
+    """
+    
+    unit_registry = UnitRegistry()
+    try:
+        G = run_gpt_with_analytic_THz(settings=settings,
+                             gpt_input_file=gpt_input_file,
+                             distgen_input_file=distgen_input_file,
+                             workdir=workdir, 
+                             use_tempdir=use_tempdir,
+                             gpt_bin=gpt_bin,
+                             timeout=timeout,
+                             auto_phase=auto_phase,
+                             verbose=verbose,
+                             gpt_verbose=gpt_verbose,
+                             asci2gdf_bin=asci2gdf_bin)
+    except Exception as e:
+        return {'run_error': True, 'run_error_str': str(e)}
+    
+    if merit_f:
+        output = merit_f(G)
+    else:
+        output = default_gpt_merit(G)
+        
+    output['run_error'] = False
+            
+    return output
+
+
+def run_gpt_with_analytic_THz(settings=None,
+                             gpt_input_file=None,
+                             distgen_input_file=None,
+                             input_particle_group=None,  # use either distgen file or particle group, not both
+                             workdir=None, 
+                             use_tempdir=True,
+                             gpt_bin='$GPT_BIN',
+                             timeout=2500,
+                             auto_phase=False,
+                             verbose=False,
+                             gpt_verbose=False,
+                             asci2gdf_bin='$ASCI2GDF_BIN',
+                             kill_msgs=[],
+                             load_fields=False
+                             ):
+
+    required_things_in_settings = {'z_mirror', 'n_mirrors'}
+
+    for s in required_things_in_settings:
+        if (s not in settings):
+            raise ValueError(f"You need to have {s} in settings")
+
+    settings_without_THz = copy.copy(settings)
+    settings_without_THz['E0'] = 0.0
+    settings_without_THz['E02'] = 0.0
+    
+        
+    gpt_data = run_gpt_with_settings(settings=settings_without_THz,
+                             gpt_input_file=gpt_input_file,
+                             distgen_input_file=distgen_input_file,
+                             input_particle_group=input_particle_group,  # use either distgen file or particle group, not both
+                             workdir=workdir, 
+                             use_tempdir=use_tempdir,
+                             gpt_bin=gpt_bin,
+                             timeout=timeout,
+                             auto_phase=auto_phase,
+                             verbose=verbose,
+                             gpt_verbose=gpt_verbose,
+                             asci2gdf_bin=asci2gdf_bin,
+                             kill_msgs=kill_msgs,
+                             load_fields=load_fields)
+
+    scr = copy.deepcopy(get_screen_data(gpt_data, screen_z=settings['z_mirror'])[0])
+    if (np.abs(scr['mean_z'] - settings['z_mirror']) > 1.0e-6):
+        raise ValueError(f"Could not find screen at z = {settings['z_mirror']} in first run")
+
+    if ('best_E0' in settings and 'z_sample' in settings):
+        if (settings['best_E0'] == 1):
+            settings['E0'] = 1000
+            scr_test = get_analytic_scr(settings, scr, settings_to_guess(settings, settings['n_mirrors']))
+            L = settings['z_sample'] - settings['z_mirror']
+            scr_test.drift_to_t(scr_test['mean_t'])
+            v1 = 299792458 * scr_test.beta_z
+            v0 = 299792458 * scr.beta_z
+            dv = v1 - v0
+            t = L/np.mean(v0)
+            dz = scr_test.z + v0*t - settings['z_sample']
+            alpha = - np.mean(dz*dv) / ((np.mean(dv*dv) - np.mean(dv)**2) * t)
+            if (verbose):
+                print(f'Changing E0 = {alpha*settings["E0"]}')
+            settings['E0'] = alpha*settings['E0']
+        
+    input_PG = get_analytic_scr(settings, scr)
+    scr_after_THz = copy.deepcopy(input_PG)
+    input_PG.drift_to_t(input_PG['mean_t'])
+
+    new_settings = copy.copy(settings_without_THz)
+    new_settings['t_start'] = input_PG['mean_t']
+    
+    gpt_data2 = run_gpt_with_settings(settings=new_settings,
+                             gpt_input_file=gpt_input_file,
+                             input_particle_group=input_PG,
+                             workdir=workdir, 
+                             use_tempdir=use_tempdir,
+                             gpt_bin=gpt_bin,
+                             timeout=timeout,
+                             auto_phase=auto_phase,
+                             verbose=verbose,
+                             gpt_verbose=gpt_verbose,
+                             asci2gdf_bin=asci2gdf_bin,
+                             kill_msgs=kill_msgs,
+                             load_fields=load_fields)
+
+    # All of this may fail if there are touts.... untested
+    z_list = [np.mean(scr.z) for scr in gpt_data.screen]
+    gpt_data.output['particles'] = [gpt_data.screen[ii] for ii in np.arange(0, len(z_list)) if z_list[ii] < settings['z_mirror']]
+
+    z_min_safe = np.max(input_PG.z)
+    
+    z_list = [np.mean(scr.z) for scr in gpt_data2.screen]
+    gpt_data.output['particles'] = gpt_data.output['particles'] + [scr_after_THz] + [gpt_data2.screen[ii] for ii in np.arange(0, len(z_list)) if z_list[ii] > z_min_safe]
+    
+    gpt_data.output['n_screen'] = len(gpt_data.output['particles'])
+    gpt_data.output['n_tout'] = 0
+
+    return gpt_data
+
+
+
+
 
 def run_gpt_with_THz(settings=None,
                              gpt_input_file=None,
@@ -225,7 +370,6 @@ def run_gpt_with_THz(settings=None,
                              timeout=timeout)
     
     return gpt_data
-
 
 
 def run_gpt_with_settings(settings=None,
@@ -462,7 +606,7 @@ def run_gpt_with_settings(settings=None,
             # Don't include the cathode if there are no other screens. Screws up optimizations of "final" screen when there is an error
             G_all.output['particles'].insert(0, input_particle_group)
             G_all.output['n_tout'] = G_all.output['n_tout']+1
-    else:
+    elif (input_particle_group['sigma_z'] == 0.0):
         # Initial distribution is a screen
         if (G_all.output['n_screen'] > 0):
             # Don't include the cathode if there are no other screens. Screws up optimizations of "final" screen when there is an error
@@ -664,16 +808,20 @@ def run_one_thread(settings_input,
         if (len(g.screen)==0):
             # If no screens are made by GPT, then initial dist is not included. So, add it here
             # This happens when particles are lost before first screen output
-            g.output['particles'].insert(g.output['n_tout'], PG_temp)
-            g.output['n_screen'] = g.output['n_screen']+1
+
+            if (np.all(abs(PG_temp.z) == 0.0)): # only include if it's actually a screen at z=0
+                g.output['particles'].insert(g.output['n_tout'], PG_temp)
+                g.output['n_screen'] = g.output['n_screen']+1
 
         if (keep_only_last_pass):
+            n_tout = len(g.tout)
             # If a particle passes a screen more than once, we only keep its position the last time it went forward
             # This can help plots that show charge vs. z, for example
             for ii, s in enumerate(g.particles):
-                s = s[s.pz > 0]
-                s = keep_only_last_forward_pass(s)
-                g.particles[ii] = s
+                if (ii >= n_tout):
+                    s = s[s.pz > 0]
+                    s = keep_only_last_forward_pass(s)
+                    g.particles[ii] = s
         g_list = g_list + [g]
     return g_list
 
@@ -745,14 +893,15 @@ def multithread_gpt_with_settings(settings=None,
         gpt_data_list = list(executor.map(wrapped_func, [settings_copy] * n_threads, PG_groups))
 
     gpt_data_list = [item for sublist in gpt_data_list for item in sublist] # flatten list of lists
-
+    
     if (verbose):
         print('Done.')
         print('Combining all gpt runs into single object...')
 
     n_screen_list = np.array([len(g.screen) for g in gpt_data_list])
     gpt_data = copy.deepcopy(gpt_data_list[np.argmax(n_screen_list)])
-    z_list = gpt_data.stat('mean_z')
+    #z_list = gpt_data.stat('mean_z') # fails with empty screens
+    z_list = np.array([np.sum(s.z * s.weight)/np.sum(s.weight) if (len(s.z) > 0) else -1.0e6 for s in gpt_data.screen])
     dz_list = np.diff(np.sort(z_list))
     dz_list = dz_list[dz_list>0.0]
     if (len(dz_list) > 0):
@@ -760,46 +909,119 @@ def multithread_gpt_with_settings(settings=None,
     else:
         ztol = 1.0e-6 # when there was only a single screen location originally
 
+    n_tout = len(gpt_data.tout)
+    t_list = np.array([np.sum(s.t * s.weight)/np.sum(s.weight) if (len(s.t) > 0) else -1.0e6 for s in gpt_data.tout])
+    if (n_tout > 2):
+        dt_list = np.diff(np.sort(t_list))
+        ttol = np.min(dt_list)/100 # 100x smaller than smallest (nonzero) spacing between touts
+    else:
+        ttol = 1.0e-15 # when there was only a single tout originally
+
     # Make placeholder empty particlegroups to fill in
     p = get_blank_particlegroup(len(input_particle_group))
     p.weight = np.nan
     p.id = input_particle_group.id
 
+    # overwrite all touts and screens in gpt_data with blank group
     for ii in np.arange(0,len(gpt_data.particles)):
         gpt_data.particles[ii] = copy.deepcopy(p)
 
-    # If you have particle IDs that are huge numbers, this may kill your memory
-    # Could be replaced with a (much slower) dictionary lookup if that's a problem
-    int_id = [int(idii) for idii in input_particle_group.id]
-    inverse_map = np.full(np.max(int_id) + 1, -1, dtype=int)
-    inverse_map[int_id] = np.arange(len(int_id))
+    # Make id lookup table, such that id_order[np.searchsorted(sorted_ids, which_id)] returns the location of which_id
+    int_id = np.array([int(idii) for idii in input_particle_group.id])
+    id_order = np.argsort(int_id)
+    sorted_ids = int_id[id_order] 
 
-    for g in gpt_data_list:
-        for s in g.screen:
-            if (len(s) > 0):
-                z = s.z[0]
-                which_screen = np.argmin(np.abs(z-z_list))
-                if (np.abs(z_list[which_screen] - z) < ztol):
-                    int_id = [int(idii) for idii in s.id]
-                    p_ii = inverse_map[int_id]
-                    if (np.count_nonzero(p_ii == -1) > 0):
-                        raise ValueError("Unexpected ID")
-                    gpt_data.particles[which_screen].x[p_ii] = s.x
-                    gpt_data.particles[which_screen].y[p_ii] = s.y
-                    gpt_data.particles[which_screen].z[p_ii] = s.z
-                    gpt_data.particles[which_screen].px[p_ii] = s.px
-                    gpt_data.particles[which_screen].py[p_ii] = s.py
-                    gpt_data.particles[which_screen].pz[p_ii] = s.pz
-                    gpt_data.particles[which_screen].t[p_ii] = s.t
-                    gpt_data.particles[which_screen].weight[p_ii] = s.weight
- 
+    # Old version with simple (potentially huge memory) lookup table
+    #inverse_map = np.full(np.max(int_id) + 1, -1, dtype=int)
+    #inverse_map[int_id] = np.arange(len(int_id))
+
+    # All particles from screens to gpt_data.screen
+    if (len(z_list) > 0):
+        for g in gpt_data_list:
+            for s in g.screen:
+                if (len(s) > 0):
+                    z = s.z[0]
+                    which_screen = np.argmin(np.abs(z-z_list))
+                    if (np.abs(z_list[which_screen] - z) < ztol):
+                        int_id = [int(idii) for idii in s.id]
+    
+                        p_ii = id_order[np.searchsorted(sorted_ids, int_id)]
+    
+                        # Old version with simple lookup table
+                        # p_ii = inverse_map[int_id]
+                        
+                        if (np.count_nonzero(p_ii == -1) > 0):
+                            raise ValueError("Unexpected ID")
+                        gpt_data.particles[n_tout+which_screen].x[p_ii] = s.x
+                        gpt_data.particles[n_tout+which_screen].y[p_ii] = s.y
+                        gpt_data.particles[n_tout+which_screen].z[p_ii] = s.z
+                        gpt_data.particles[n_tout+which_screen].px[p_ii] = s.px
+                        gpt_data.particles[n_tout+which_screen].py[p_ii] = s.py
+                        gpt_data.particles[n_tout+which_screen].pz[p_ii] = s.pz
+                        gpt_data.particles[n_tout+which_screen].t[p_ii] = s.t
+                        gpt_data.particles[n_tout+which_screen].weight[p_ii] = s.weight
+
+    # All particles from touts to gpt_data.tout
+    if (len(t_list) > 0):
+        for g in gpt_data_list:
+            for s in g.tout:
+                if (len(s) > 0):
+                    t = s.t[0]
+                    which_screen = np.argmin(np.abs(t-t_list))
+                    if (np.abs(t_list[which_screen] - t) < ttol):
+                        int_id = [int(idii) for idii in s.id]
+    
+                        p_ii = id_order[np.searchsorted(sorted_ids, int_id)]
+    
+                        # Old version with simple lookup table
+                        # p_ii = inverse_map[int_id]
+                        
+                        if (np.count_nonzero(p_ii == -1) > 0):
+                            raise ValueError("Unexpected ID")
+                        gpt_data.particles[which_screen].x[p_ii] = s.x
+                        gpt_data.particles[which_screen].y[p_ii] = s.y
+                        gpt_data.particles[which_screen].z[p_ii] = s.z
+                        gpt_data.particles[which_screen].px[p_ii] = s.px
+                        gpt_data.particles[which_screen].py[p_ii] = s.py
+                        gpt_data.particles[which_screen].pz[p_ii] = s.pz
+                        gpt_data.particles[which_screen].t[p_ii] = s.t
+                        gpt_data.particles[which_screen].weight[p_ii] = s.weight
+
+    if (load_fields):
+        if (len(t_list) > 0):
+            # Initialize blank tout_data
+            blank_arr = np.zeros(len(input_particle_group))
+            blank_arr[:] = np.nan
+            blank_tout_dict = {'fEx': copy.copy(blank_arr), 'fEy': copy.copy(blank_arr), 'fEz': copy.copy(blank_arr),'fBx': copy.copy(blank_arr),'fBy': copy.copy(blank_arr),'fBz': copy.copy(blank_arr)}
+            ff_keys = blank_tout_dict.keys()
+            gpt_data.output['tout_data'] = [copy.deepcopy(blank_tout_dict) for t in t_list]
+
+            # Populate tout_data
+            for g in gpt_data_list:
+                for ii, field_data in enumerate(g.output['tout_data']):
+                    s = g.particles[ii]
+                    t = s.t[0]
+                    which_t = np.argmin(np.abs(t-t_list))
+                    if (np.abs(t_list[which_t] - t) < ttol):
+                        int_id = [int(idii) for idii in s.id]
+                        p_ii = id_order[np.searchsorted(sorted_ids, int_id)]
+                        for ff_key in ff_keys:
+                            gpt_data.output['tout_data'][which_t][ff_key][p_ii] = field_data[ff_key]
+                        
     # Any particles that were lost along the way will have placeholders in screens with weight == nan, remove those
     for ii, p in enumerate(gpt_data.particles):
         if (np.count_nonzero(np.isnan(p.weight)) > 0):
             g_id = p.id[~np.isnan(p.weight)] # IDs seem to get messed up in this for loop, so make a backup
             gpt_data.particles[ii] = p[~np.isnan(p.weight)]
             gpt_data.particles[ii].id = g_id # shouldn't have to do this... 
+
+    # Also remove nans in tout_data, which should be the same particles that had nan weight above
+    if (load_fields):
+        for field_data in gpt_data.output['tout_data']:
+            for ff in field_data.keys():
+                field_data[ff] = field_data[ff][~np.isnan(field_data[ff])]
             
+    
     if (verbose):
         print('Done.')
 

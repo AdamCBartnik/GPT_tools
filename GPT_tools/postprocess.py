@@ -1,4 +1,5 @@
 import numpy as np
+import numpy.matlib as npm
 import copy
 from .ParticleGroupExtension import ParticleGroupExtension, divide_particles
 import numpy.polynomial.polynomial as poly

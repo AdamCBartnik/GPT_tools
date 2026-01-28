@@ -116,6 +116,21 @@ def dpz(E0, x0, y0, t0, omega0, sigt, tht, thb, phi0, beta, w0):
         
     return E0*conv * A * B * C
 
+
+# Analytic effect of mirror delta_px in units of eV/c if SI units are passed in
+def dpx(E0, x0, y0, t0, omega0, sigt, tht, thb, phi0, beta, w0):
+    c = 299792458
+    x0p = x0 * np.cos(tht) / np.cos(thb)
+    A = (beta*np.sin(tht) - np.sin(thb))*(beta*np.sin(thb) - np.sin(tht))/((beta*np.cos(thb - tht)-1.0)*(beta*np.cos(thb+tht)+1.0))
+    B = np.exp(-(x0p**2 + y0**2)/w0**2)
+    R = 0.5*(t0/sigt - x0/np.cos(thb)*(beta*np.sin(tht) - np.sin(thb))/(beta*c*sigt) )
+    
+    C = -4*sigt*(0.5*np.sqrt(np.pi)*np.exp(-omega0**2*sigt**2)*np.cos(phi0) + np.imag(np.exp(-R**2 + 1j*(phi0 + 2.0*R*omega0*sigt))*scipy.special.dawsn(-omega0*sigt-1j*R)))
+    
+    conv = c  # (1 volt / m) * (electron charge) * (1 s) in eV/c  =  c
+        
+    return E0*conv * A * B * C
+
 def dpzParabola(E0, x0, y0, t0, omega0, sigt, tht, thb, phi0, beta, w0):
     x0p = x0 * np.cos(tht) / np.cos(thb)
     r2 = (x0p**2 + y0**2)
@@ -247,12 +262,14 @@ def get_analytic_scr(settings, scr, guess=None, force_dt=None):
     t = scr_new.t - scr_new['mean_t'] - s['dt']
     
     scr_new.pz = scr_new.pz + dpz(E0, x, y, t, omega0, sigt, tht, thb, phi0, beta, w0)
+    scr_new.px = scr_new.px + dpx(E0, x, y, t, omega0, sigt, tht, thb, phi0, beta, w0)
     
     x2 = scr_new.x
     y2 = scr_new.y
     t2 = scr_new.t - scr_new['mean_t'] - s['dt2']
     
     scr_new.pz = scr_new.pz + dpz(E02, x2, y2, t2, omega0, sigt, tht, thb, phi02, beta, w02)
+    scr_new.px = scr_new.px + dpx(E02, x2, y2, t2, omega0, sigt, tht, thb, phi02, beta, w02)
 
     if ('sig_x3' in s.keys()):
         w03 = s['sig_x3']*2
@@ -264,6 +281,7 @@ def get_analytic_scr(settings, scr, guess=None, force_dt=None):
         t3 = scr_new.t - scr_new['mean_t'] - s['dt3']
         
         scr_new.pz = scr_new.pz + dpz(E03, x3, y3, t3, omega0, sigt, tht, thb, phi03, beta, w03)
+        scr_new.px = scr_new.px + dpx(E03, x3, y3, t3, omega0, sigt, tht, thb, phi03, beta, w03)
 
     
     return scr_new

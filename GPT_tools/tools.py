@@ -207,9 +207,12 @@ def get_screen_data(gpt_data, verbose=False, use_extension=True, **params):
         values = np.zeros(len(screen_list)) * np.nan
         
         for ii, screen in enumerate(screen_list, start=0):
-            values[ii] = screen['mean_'+screen_key]
+            if (len(screen) > 0):
+                values[ii] = screen['mean_'+screen_key]
+            else:
+                values[ii] = np.nan
         
-        screen_index = np.argmin(np.abs(values-screen_value))
+        screen_index = np.nanargmin(np.abs(values-screen_value))
         found_screen_value = values[screen_index]
         if (verbose):
             if (use_touts):

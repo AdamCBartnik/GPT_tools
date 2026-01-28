@@ -623,6 +623,7 @@ def gpt_plot_trajectory(gpt_data_input, var1, var2, fig_ax=None, format_input_da
     
     x = np.empty( (len(gpt_data.screen),len(plot_ids)) )
     y = np.empty( (len(gpt_data.screen),len(plot_ids)) )
+    t = np.empty( (len(gpt_data.screen),len(plot_ids)) )
     
     for i, s in enumerate(gpt_data.screen):
         index = np.argsort(s.id)
@@ -637,6 +638,8 @@ def gpt_plot_trajectory(gpt_data_input, var1, var2, fig_ax=None, format_input_da
         x[i,index_of_found_ids.mask] = np.nan
         y[i,:] = getattr(s, var2)[index_of_found_ids]
         y[i,index_of_found_ids.mask] = np.nan
+        t[i,:] = getattr(s, 't')[index_of_found_ids]
+        t[i,index_of_found_ids.mask] = np.nan
             
     all_x = x.flatten()
     all_x = all_x[np.logical_not(np.isnan(all_x))]
@@ -653,7 +656,10 @@ def gpt_plot_trajectory(gpt_data_input, var1, var2, fig_ax=None, format_input_da
         if (nlines < len(plot_ids)):
             index_to_plot = random.sample(index_to_plot, nlines)
     for j in index_to_plot:
-        fig_ax[1].plot(x[:,j], y[:,j], '-')
+        xj = x[:,j]
+        yj = y[:,j]
+        tj_ind = np.argsort(t[:,j])
+        fig_ax[1].plot(xj[tj_ind], yj[tj_ind], '-')
                 
     fig_ax[1].set_xlabel(f"{format_label(var1, use_base=True)} ({x_units})")
     fig_ax[1].set_ylabel(f"{format_label(var2, use_base=True)} ({y_units})")

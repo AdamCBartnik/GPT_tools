@@ -113,44 +113,61 @@ def getEexc(settings, modify_settings=True, verbose=True):
     # Returns : (EexcAtSurface, EexcAtPeak, kT)
     
     E1 = 1.43996455e-9  #  e^2/(4*pi*epsilon_0) in eV-meters
-    
-    MTE = getValueFromSettings(settings, 'start:MTE', 'eV', modify_settings=False, verbose=verbose) # ignore user modify_settings, don't add 'start:MTE' to settings
+
     kT = getValueFromSettings(settings, 'kT', 'eV', modify_settings=modify_settings, verbose=verbose)
     gun_field = getValueFromSettings(settings, 'gun_field', 'V/m', modify_settings=modify_settings, verbose=verbose)
     plummer_radius = getValueFromSettings(settings, 'plummer_radius', 'm', modify_settings=modify_settings, verbose=verbose)
-        
+
     if (gun_field < 0):
         if (verbose):
             print('Warning: changing sign of gun field')
         gun_field = np.abs(gun_field)
-        
-    if (MTE <= 1.096144454*kT):
-        if (verbose):
-            print(f'MTE must be larger than 9*zeta(3)/pi^2*kT = {1.096144454*kT}')
-        return None    
     
-    EexcAtPeak = inv_MTE_model(MTE, kT)
-    
-    if ('QE' in settings and 'cathode_z_offset:value' in settings and 'cathode_z_offset:units' in settings):
-        if (verbose):
-            print('Error, specify only QE or cathode_z_offset')
-        return None
-    
-    if ('QE' in settings):
-        QE = settings['QE']
-        EexcAtSurface = inv_QE_model(QE, EexcAtPeak, kT)
-        alp = np.sqrt(E1*gun_field)
-        z0 = (EexcAtSurface - EexcAtPeak + alp - np.sqrt((EexcAtSurface - EexcAtPeak)*(EexcAtSurface - EexcAtPeak + 2.0*alp)))/(2.0*gun_field)
-        if (modify_settings):
-            settings['cathode_z_offset'] = z0
-            if (verbose):
-                print(f'Adding settings["cathode_z_offset"] = {settings["cathode_z_offset"]} for use in GPT')
-    else:
-        z0 = getValueFromSettings(settings, 'cathode_z_offset', 'm', modify_settings=modify_settings, verbose=verbose)
+    phi = getValueFromSettings(settings, 'work_function', 'eV', modify_settings=False, verbose=False) # ignore user modify_settings, don't add 'start:MTE' to settings
+    hv = getValueFromSettings(settings, 'photon_energy', 'eV', modify_settings=False, verbose=False) # ignore user modify_settings, don't add 'start:MTE' to settings
 
-    zpeak = PeakPotentialz(gun_field, z0, plummer_radius)
-    barrierV = ImagePotential(zpeak, z0, plummer_radius, gun_field) - ImagePotential(0, z0, plummer_radius, gun_field)
-    EexcAtSurface = EexcAtPeak + barrierV
+    if (phi is not None and hv is not None):
+        # user is picking the work function, photon energy, and cathode_z_offset
+        z0 = getValueFromSettings(settings, 'cathode_z_offset', 'm', modify_settings=modify_settings, verbose=verbose)
+        if (z0 is None):
+            print('Need to specify cathode_z_offset')
+            return None
+        EexcAtSurface = hv - phi - ImagePotential(0, z0, plummer_radius, gun_field)
+        zpeak = PeakPotentialz(gun_field, z0, plummer_radius)
+        EexcAtPeak = hv - phi - ImagePotential(zpeak, z0, plummer_radius, gun_field)
+        
+    else:
+        # user is picking the desired MTE and either the QE or the cathode_z_offset
+        MTE = getValueFromSettings(settings, 'start:MTE', 'eV', modify_settings=False, verbose=verbose) # ignore user modify_settings, don't add 'start:MTE' to settings
+        
+        if (MTE <= 1.096144454*kT):
+            if (verbose):
+                print(f'MTE must be larger than 9*zeta(3)/pi^2*kT = {1.096144454*kT}')
+            return None    
+        
+        EexcAtPeak = inv_MTE_model(MTE, kT)
+        
+        if ('QE' in settings and 'cathode_z_offset:value' in settings and 'cathode_z_offset:units' in settings):
+            if (verbose):
+                print('Error, specify only QE or cathode_z_offset')
+            return None
+        
+        if ('QE' in settings):
+            QE = settings['QE']
+            EexcAtSurface = inv_QE_model(QE, EexcAtPeak, kT)
+            alp = np.sqrt(E1*gun_field)
+            z0 = (EexcAtSurface - EexcAtPeak + alp - np.sqrt((EexcAtSurface - EexcAtPeak)*(EexcAtSurface - EexcAtPeak + 2.0*alp)))/(2.0*gun_field)
+            if (modify_settings):
+                settings['cathode_z_offset'] = z0
+                if (verbose):
+                    print(f'Adding settings["cathode_z_offset"] = {settings["cathode_z_offset"]} for use in GPT')
+        else:
+            z0 = getValueFromSettings(settings, 'cathode_z_offset', 'm', modify_settings=modify_settings, verbose=verbose)
+
+        zpeak = PeakPotentialz(gun_field, z0, plummer_radius)
+        barrierV = ImagePotential(zpeak, z0, plummer_radius, gun_field) - ImagePotential(0, z0, plummer_radius, gun_field)
+        EexcAtSurface = EexcAtPeak + barrierV
+        
     QEatPeak = QE_model(EexcAtPeak, kT, EexcAtSurface)
     
      # Update settings 
@@ -164,6 +181,7 @@ def getEexc(settings, modify_settings=True, verbose=True):
         print(f'Predicted final N = {settings["n_particle"]*QEatPeak:.1f} particles = {1.60217663e-1*settings["n_particle"]*QEatPeak:.3g} aC = {100*QEatPeak:.3g}% QE')
         print(f'Predicted final MTE = {1e3*MTE_model(EexcAtPeak, kT):.3g} meV')
         print(f'Peak potential barrier at z = {1e9*zpeak:.3g} nm')
+        print(f'Eexc at surface = {EexcAtSurface}, Eexc at peak = {EexcAtPeak}, kT = {kT}')
     
     return (EexcAtSurface, EexcAtPeak, kT)
 
@@ -171,8 +189,12 @@ def PeakPotentialz(E0, z0, r0):
     E1 = 1.43996455e-9  #  e^2/(4*pi*epsilon_0) in eV-meters
     
     a = np.power((-9.0*E0**4*E1**2*r0**2 + np.emath.sqrt(-12.0*E0**6*E1**6 + 81.0*E0**8*E1**4*r0**4)) / (2.0/3.0), 1.0/3.0)
+
+    zpeak = 0.5*np.sqrt(-r0**2 + 2.0*np.real(E1**2/a) ) - z0
+    if (zpeak < 0.0):
+        zpeak = 0.0
     
-    return 0.5*np.sqrt(-r0**2 + 2.0*np.real(E1**2/a) ) - z0
+    return zpeak
     
     # return 0.5*np.sqrt(E1/E0) - z0  # this is for r0 = 0, in case my crazy formula above doesn't work in some fringe case
 
