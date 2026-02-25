@@ -1,6 +1,6 @@
-from pmd_beamphysics import ParticleGroup
-from pmd_beamphysics.units import unit, PARTICLEGROUP_UNITS
-from pmd_beamphysics.statistics import norm_emit_calc
+from beamphysics import ParticleGroup
+from beamphysics.units import unit, PARTICLEGROUP_UNITS
+from beamphysics.statistics import norm_emit_calc
 from matplotlib import pyplot as plt
 import numpy.polynomial.polynomial as poly
 import numpy as np
@@ -45,6 +45,7 @@ class ParticleGroupExtension(ParticleGroup):
         for k in new_units:
             if (k not in PARTICLEGROUP_UNITS.keys()):
                 PARTICLEGROUP_UNITS[k] = unit(new_units[k])
+
     @property
     def transverse_energy(self):
         return np.sqrt(self.px**2 + self.py**2 + self.mass**2) - self.mass
@@ -216,8 +217,6 @@ def convert_gpt_data(gpt_data_input):
     gpt_data = copy.deepcopy(gpt_data_input)
     for i, pmd in enumerate(gpt_data_input.particles):
         gpt_data.particles[i] = ParticleGroupExtension(input_particle_group=pmd)  # This copies the data again
-    #for tout in gpt_data.tout:
-    #    tout.drift_to_z() # Turn all the touts into quasi-screens
     return gpt_data
 
 

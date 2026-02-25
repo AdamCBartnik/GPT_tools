@@ -4,7 +4,7 @@ from gpt import GPT
 from .tools import *
 from .nicer_units import *
 from .postprocess import postprocess_screen
-from pmd_beamphysics.units import c_light, e_charge
+from beamphysics.units import c_light, e_charge
 from .ParticleGroupExtension import ParticleGroupExtension, convert_gpt_data, divide_particles
 from ipywidgets import HBox
 import ipywidgets as widgets
@@ -390,7 +390,7 @@ def gpt_plot_dist2d(pmd, var1, var2, plot_type='histogram', units=None, fig=None
     if (not isinstance(pmd, ParticleGroupExtension)):
         pmd = ParticleGroupExtension(input_particle_group=pmd)
     pmd = postprocess_screen(pmd, **params)
-            
+    
     if (isinstance(var2, tuple)):
         use_separate_data = True
         pmd2 = var2[1]
@@ -667,7 +667,7 @@ def gpt_plot_trajectory(gpt_data_input, var1, var2, fig_ax=None, format_input_da
     if ('xlim' in params):
         fig_ax[1].set_xlim(params['xlim'])
     if ('ylim' in params):
-        fig_ax[1].set_ylim(params['xlim'])
+        fig_ax[1].set_ylim(params['ylim'])
             
     if (show_plot):
         return HBox([fig_ax[0].canvas], layout=widgets.Layout(width='800px'))

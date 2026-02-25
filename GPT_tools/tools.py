@@ -35,24 +35,24 @@ def format_label(s, latex=True, use_base=False, add_underscore=True):
         s = s.replace('pr', 'p_r')
         s = s.replace('ptrans', 'p_trans')
     if (latex):
-        s = s.replace('trans', '\\perp')
-        s = s.replace('sigma','\\sigma')
-        s = s.replace('theta', '\\theta')
-        s = s.replace('slice_emit', 'Slice \\epsilon')
-        s = s.replace('sqrt_norm_emit', '\\epsilon')
-        s = s.replace('root_norm_emit', '\\epsilon')
-        s = s.replace('norm_emit', '\epsilon')
-        s = s.replace('emit', '\epsilon')
+        s = s.replace('trans', r'\perp')
+        s = s.replace('sigma', r'\sigma')
+        s = s.replace('theta', r'\theta')
+        s = s.replace('slice_emit', r'Slice \epsilon')
+        s = s.replace('sqrt_norm_emit', r'\epsilon')
+        s = s.replace('root_norm_emit', r'\epsilon')
+        s = s.replace('norm_emit', r'\epsilon')
+        s = s.replace('emit', r'\epsilon')
         s = s.replace('4d','{4d}')
         s = s.replace('6d','{6d}')
         s = s.replace('charge','charge')
     else:
         s = s.replace('$', '')
         s = s.replace('trans', '⟂')
-        s = s.replace('\\sigma','sigma')
-        s = s.replace('\\theta', 'theta')
-        s = s.replace('\\epsilon', 'emit')
-        s = s.replace('\\mu', 'μ')
+        s = s.replace(r'\sigma','sigma')
+        s = s.replace(r'\theta', 'theta')
+        s = s.replace(r'\epsilon', 'emit')
+        s = s.replace(r'\mu', 'μ')
         s = s.replace('sigma','σ')
         s = s.replace('theta', 'θ')
         s = s.replace('slice_emit', 'slice ε')
@@ -263,7 +263,7 @@ def scale_mean_and_get_units(x, x_base_units, subtract_mean=True, weights=None):
 
 def check_mu(str):
     if (str == 'u'):
-        return '$\mu$'
+        return r'$\mu$'
     return str
     
     
@@ -305,7 +305,7 @@ def map_hist(x, y, h, bins):
     vals = h.flatten()[inds]
     bads = ((x < bins[0][0]) | (x > bins[0][-1]) |
             (y < bins[1][0]) | (y > bins[1][-1]))
-    vals[bads] = np.NaN
+    vals[bads] = np.nan
     return vals
 
 

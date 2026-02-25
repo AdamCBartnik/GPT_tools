@@ -4,7 +4,7 @@ import re
 from gpt import GPT
 from gpt.gpt_phasing import gpt_phasing
 from .ParticleGroupExtension import ParticleGroupExtension
-from pmd_beamphysics import ParticleGroup
+from beamphysics import ParticleGroup
 from distgen import Generator
 from distgen.writers import write_gpt
 from .tools import get_screen_data
@@ -217,7 +217,7 @@ def run_gpt_with_analytic_THz(settings=None,
                              gpt_verbose=False,
                              asci2gdf_bin='$ASCI2GDF_BIN',
                              kill_msgs=[],
-                             load_fields=False
+                             load_all_gdf_data=False
                              ):
 
     required_things_in_settings = {'z_mirror', 'n_mirrors'}
@@ -244,7 +244,7 @@ def run_gpt_with_analytic_THz(settings=None,
                              gpt_verbose=gpt_verbose,
                              asci2gdf_bin=asci2gdf_bin,
                              kill_msgs=kill_msgs,
-                             load_fields=load_fields)
+                             load_all_gdf_data=load_all_gdf_data)
 
     scr = copy.deepcopy(get_screen_data(gpt_data, screen_z=settings['z_mirror'])[0])
     if (np.abs(scr['mean_z'] - settings['z_mirror']) > 1.0e-6):
@@ -285,7 +285,7 @@ def run_gpt_with_analytic_THz(settings=None,
                              gpt_verbose=gpt_verbose,
                              asci2gdf_bin=asci2gdf_bin,
                              kill_msgs=kill_msgs,
-                             load_fields=load_fields)
+                             load_all_gdf_data=load_all_gdf_data)
 
     # All of this may fail if there are touts.... untested
     z_list = [np.mean(scr.z) for scr in gpt_data.screen]
@@ -343,8 +343,8 @@ def run_gpt_with_THz(settings=None,
     
     settings_t0 = copy.copy(settings)
     settings_t0['n_particle'] = 10
-    settings_t0['pulse_energy'] = 0
-    settings_t0['pulse_energy2'] = 0
+    settings_t0['E0'] = 0
+    settings_t0['E02'] = 0
     settings_t0['n_screens'] = 0
     settings_t0['space_charge'] = 0
     settings_t0['auto_phase'] = 1
@@ -357,9 +357,12 @@ def run_gpt_with_THz(settings=None,
                              auto_phase=auto_phase,
                              timeout=timeout)
     settings['t0'] = get_screen_data(gpt_data, screen_z=settings["z_mirror"])[0]["mean_t"]
-    settings['t02'] = get_screen_data(gpt_data, screen_z=settings["z_mirror2"])[0]["mean_t"]
-    if (verbose):
-        print(f'setting t0 = {settings["t0"]}, t02 = {settings["t02"]}')
+    print(f'setting t0 = {settings["t0"]}')
+
+    if 'z_mirror2' in settings:
+        settings['t02'] = get_screen_data(gpt_data, screen_z=settings["z_mirror2"])[0]["mean_t"]
+        print(f'setting t02 = {settings["t02"]}')
+        
     gpt_data = run_gpt_with_settings(settings,
                              gpt_input_file=gpt_input_file,
                              distgen_input_file=distgen_input_file,
@@ -385,7 +388,7 @@ def run_gpt_with_settings(settings=None,
                              gpt_verbose=False,
                              asci2gdf_bin='$ASCI2GDF_BIN',
                              kill_msgs=[],
-                             load_fields=False
+                             load_all_gdf_data=False
                              ):
 
     unit_registry = UnitRegistry()
@@ -426,7 +429,7 @@ def run_gpt_with_settings(settings=None,
         # Starting from scratch, either single or multiple passes
         
         # Make gpt and generator objects
-        G = GPT(gpt_bin=gpt_bin, input_file=gpt_input_file, initial_particles=input_particle_group, workdir=workdir, use_tempdir=use_tempdir, parse_layout=False, kill_msgs=kill_msgs, load_fields=load_fields)
+        G = GPT(gpt_bin=gpt_bin, input_file=gpt_input_file, initial_particles=input_particle_group, workdir=workdir, use_tempdir=use_tempdir, parse_layout=False, kill_msgs=kill_msgs, load_all_gdf_data=load_all_gdf_data)
         G.timeout=timeout
         G.verbose = verbose
 
@@ -515,7 +518,7 @@ def run_gpt_with_settings(settings=None,
             restart_particles.drift_to_t(t_restart) # Change to an effective tout... even though this almost always a bad idea
 
         # Do second GPT call
-        G = GPT(gpt_bin=gpt_bin, input_file=gpt_input_file, initial_particles=restart_particles, workdir=workdir, use_tempdir=use_tempdir, parse_layout=False, kill_msgs=kill_msgs, load_fields=load_fields)
+        G = GPT(gpt_bin=gpt_bin, input_file=gpt_input_file, initial_particles=restart_particles, workdir=workdir, use_tempdir=use_tempdir, parse_layout=False, kill_msgs=kill_msgs, load_all_gdf_data=load_all_gdf_data)
         G.timeout = timeout
         G.verbose = verbose
 
@@ -789,7 +792,7 @@ def run_one_thread(settings_input,
                      gpt_verbose=False,
                      asci2gdf_bin='$ASCI2GDF_BIN',
                      kill_msgs=[],
-                     load_fields=False):
+                     load_all_gdf_data=False):
     g_list = []
     for PG_temp in PG_list:
         g = run_gpt_with_settings(settings_input,
@@ -804,7 +807,7 @@ def run_one_thread(settings_input,
                      gpt_verbose=gpt_verbose,
                      asci2gdf_bin=asci2gdf_bin,
                      kill_msgs=kill_msgs,
-                     load_fields=load_fields)
+                     load_all_gdf_data=load_all_gdf_data)
         if (len(g.screen)==0):
             # If no screens are made by GPT, then initial dist is not included. So, add it here
             # This happens when particles are lost before first screen output
@@ -844,7 +847,7 @@ def multithread_gpt_with_settings(settings=None,
                              gpt_verbose=False,
                              asci2gdf_bin='$ASCI2GDF_BIN',
                              kill_msgs=[],
-                             load_fields=False
+                             load_all_gdf_data=False
                              ):
     
 
@@ -887,7 +890,7 @@ def multithread_gpt_with_settings(settings=None,
                      gpt_verbose=False,
                      asci2gdf_bin=asci2gdf_bin,
                      kill_msgs=kill_msgs,
-                     load_fields=load_fields)
+                     load_all_gdf_data=load_all_gdf_data)
         
     with concurrent.futures.ProcessPoolExecutor(max_workers=n_threads) as executor:
         gpt_data_list = list(executor.map(wrapped_func, [settings_copy] * n_threads, PG_groups))
@@ -987,7 +990,7 @@ def multithread_gpt_with_settings(settings=None,
                         gpt_data.particles[which_screen].t[p_ii] = s.t
                         gpt_data.particles[which_screen].weight[p_ii] = s.weight
 
-    if (load_fields):
+    if (load_all_gdf_data):
         if (len(t_list) > 0):
             # Initialize blank tout_data
             blank_arr = np.zeros(len(input_particle_group))
@@ -1016,7 +1019,7 @@ def multithread_gpt_with_settings(settings=None,
             gpt_data.particles[ii].id = g_id # shouldn't have to do this... 
 
     # Also remove nans in tout_data, which should be the same particles that had nan weight above
-    if (load_fields):
+    if (load_all_gdf_data):
         for field_data in gpt_data.output['tout_data']:
             for ff in field_data.keys():
                 field_data[ff] = field_data[ff][~np.isnan(field_data[ff])]
@@ -1586,7 +1589,7 @@ def get_distgen_beam_for_phasing_from_particlegroup(PG, n_particle=10, verbose=F
 
     transforms = { f'avg_{var}':{'type': f'set_avg {var}', f'avg_{var}': { 'value': PG['mean_'+var], 'units':  PG.units(var).unitSymbol  } } for var in variables }
 
-    phasing_distgen_input = {'n_particle':n_particle, 'random_type':'hammersley', 'transforms':transforms,
+    phasing_distgen_input = {'n_particle':n_particle, 'random':{'type':'hammersley'}, 'transforms':transforms,
                              'total_charge':{'value':1.0, 'units':'pC'},
                              'species':'electron',
                              'start': {'type':'time', 'tstart':{'value': 0.0, 'units': 's'}},}

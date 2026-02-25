@@ -342,7 +342,7 @@ def get_blank_particlegroup(n_particle, verbose=False):
     # Returns an uninitialized particlegroup of size N. Distgen seems to suck at this for small N
     
     variables = ['x', 'y', 'z', 'px', 'py', 'pz', 't']
-    phasing_distgen_input = {'n_particle':n_particle, 'random_type':'hammersley', 'total_charge':{'value':1.0, 'units':'pC'}, 'species':'electron', 'start': {'type':'time', 'tstart':{'value': 0.0, 'units': 's'}},}
+    phasing_distgen_input = {'n_particle':n_particle, 'random':{'type':'hammersley'}, 'total_charge':{'value':1.0, 'units':'pC'}, 'species':'electron', 'start': {'type':'time', 'tstart':{'value': 0.0, 'units': 's'}},}
     gen = Generator(phasing_distgen_input, verbose=verbose) 
     gen.run()
     PG = gen.particles

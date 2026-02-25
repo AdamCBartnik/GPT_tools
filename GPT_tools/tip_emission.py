@@ -186,7 +186,7 @@ def tip_height(r, H, B):
 
 def tip_normal(r, H, B):
     scalar_input = np.isscalar(r)
-    r_arr = np.array(r, copy=False, ndmin=1, dtype=float)  # now r_arr.shape is (n,) or (1,) for a scalar
+    r_arr = np.array(r, copy=True, ndmin=1, dtype=float)  # now r_arr.shape is (n,) or (1,) for a scalar
     
     s_arr = np.zeros_like(r_arr)
 
