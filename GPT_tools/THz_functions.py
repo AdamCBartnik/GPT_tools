@@ -6,6 +6,29 @@ import scipy
 import copy
    
 
+# Similar to get_analytic_scr below, but takes in raw settings
+def THz_lump_element(scr, E0, phi0, sigx, sigt, f, tht, thb, dt):
+    # phi0, tht, thb are all in radians
+    
+    scr_new = copy.deepcopy(scr)
+    
+    omega0 = 2*np.pi*f
+    g = scr['mean_energy'] / 510998.95
+    gb = np.sqrt((g-1)*(g+1))
+    beta = gb/g
+    
+    w0 = sigx*2
+       
+    x = scr_new.x
+    y = scr_new.y
+    t = scr_new.t - scr_new['mean_t'] - dt
+    
+    scr_new.pz = scr_new.pz + dpz(E0, x, y, t, omega0, sigt, tht, thb, phi0, beta, w0)
+    scr_new.px = scr_new.px + dpx(E0, x, y, t, omega0, sigt, tht, thb, phi0, beta, w0)
+        
+    return scr_new
+
+
 
 def make_parabolic_guess(n_mirrors, settings, scr, use_ideal_size=True):
     
@@ -156,20 +179,12 @@ def get_beta(EnKV):
     g = 1 + EnKV/511
     return np.sqrt((g+1)*(g-1))/g
 
-def get_pulse_energy(settings, which_screen):
-    if (which_screen == 1):
-        phi0 = np.radians(settings['phi0'])
-        w0 = settings['sig_x']*2
-        E0 = settings['E0']
-    if (which_screen == 2):
-        phi0 = np.radians(settings['phi02'])
-        w0 = settings['sig_x2']*2
-        E0 = settings['E02']
-    
-    omega0 = 2*np.pi*settings['center_frequency']
-    sigt = settings['sig_t']
-    
-    # Note phip in radians
+def get_pulse_energy(E0, phi0, sigx, sigt, f):
+    # phi0 in radians
+    # Rest in SI units
+
+    w0 = sigx*2
+    omega0 = 2*np.pi*f
     c = 299792458
     mu0 = 1.25663706e-6
     return E0**2 * np.pi**1.5 * w0**2 * sigt * (1 + np.exp(-2.0*sigt**2*omega0**2)*np.cos(2.0*phi0)) / (2.0 * np.sqrt(2.0) * c * mu0)
@@ -270,19 +285,6 @@ def get_analytic_scr(settings, scr, guess=None, force_dt=None):
     
     scr_new.pz = scr_new.pz + dpz(E02, x2, y2, t2, omega0, sigt, tht, thb, phi02, beta, w02)
     scr_new.px = scr_new.px + dpx(E02, x2, y2, t2, omega0, sigt, tht, thb, phi02, beta, w02)
-
-    if ('sig_x3' in s.keys()):
-        w03 = s['sig_x3']*2
-        phi03 = np.radians(s['phi03'])
-        E03 = s['E03']
-        
-        x3 = scr_new.x
-        y3 = scr_new.y
-        t3 = scr_new.t - scr_new['mean_t'] - s['dt3']
-        
-        scr_new.pz = scr_new.pz + dpz(E03, x3, y3, t3, omega0, sigt, tht, thb, phi03, beta, w03)
-        scr_new.px = scr_new.px + dpx(E03, x3, y3, t3, omega0, sigt, tht, thb, phi03, beta, w03)
-
     
     return scr_new
 

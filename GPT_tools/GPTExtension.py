@@ -16,7 +16,7 @@ import concurrent.futures
 from functools import partial
 from .image_charge import get_blank_particlegroup
 from sympy import divisors
-from .THz_functions import get_analytic_scr, settings_to_guess
+from .THz_functions import THz_lump_element
 
 def evaluate_run_gpt_with_settings(settings,
                                      archive_path=None,
@@ -220,16 +220,57 @@ def run_gpt_with_analytic_THz(settings=None,
                              load_all_gdf_data=False
                              ):
 
-    required_things_in_settings = {'z_mirror', 'n_mirrors'}
+    required_things_in_settings = {'z_mirror', 'E0', 'sig_x', 'sig_t', 'phi0', 'center_frequency', 'theta_THz', 'theta_beam', 'dt'}
 
     for s in required_things_in_settings:
         if (s not in settings):
             raise ValueError(f"You need to have {s} in settings")
 
+    if 'z_mirror2' in settings:
+        # Do a bunch of things just to time arrival of (non-analytic) second pulse
+        if (input_particle_group is None):
+            # Modify settings for input particlegroup as needed
+            if ('final_n_particle' in settings and 'final_charge:value' in settings and 'final_charge:units' in settings and 'total_charge:value' in settings and 'total_charge:units' in settings):
+                # user specifies final n_particles, rather than initial
+                final_charge = settings['final_charge:value'] * unit_registry.parse_expression(settings['final_charge:units'])
+                final_charge = final_charge.to('coulomb').magnitude
+                total_charge = settings['total_charge:value'] * unit_registry.parse_expression(settings['total_charge:units'])
+                total_charge = total_charge.to('coulomb').magnitude
+                n_particle = int(np.ceil(settings['final_n_particle'] * total_charge / final_charge))
+                settings['n_particle'] = int(np.max([n_particle, int(settings['final_n_particle'])]))
+                if(verbose):
+                    print(f'<**** Setting n_particle = {n_particle}.\n')
+        
+            # Make initial distribution
+            phasing_input_particle_group = get_cathode_particlegroup(settings, distgen_input_file, verbose=verbose)
+        else:
+            phasing_input_particle_group = input_particle_group
+        phase_PG = get_distgen_beam_for_phasing_from_particlegroup(phasing_input_particle_group, n_particle=10, verbose=False, output_PG = True)
+        
+        settings_t0 = copy.copy(settings)
+        settings_t0['n_particle'] = 10
+        settings_t0['E0'] = 0
+        settings_t0['E02'] = 0
+        settings_t0['n_screens'] = 0
+        settings_t0['space_charge'] = 0
+        settings_t0['auto_phase'] = 1
+    
+        gpt_data = run_gpt_with_settings(settings_t0,
+                                 input_particle_group = phase_PG,
+                                 gpt_input_file=gpt_input_file,
+                                 verbose=False,
+                                 gpt_verbose=False,
+                                 auto_phase=auto_phase,
+                                 timeout=timeout)
+    
+        settings['t02'] = get_screen_data(gpt_data, screen_z=settings["z_mirror2"])[0]["mean_t"]
+        print(f'setting t02 = {settings["t02"]}')
+    
     settings_without_THz = copy.copy(settings)
     settings_without_THz['E0'] = 0.0
     settings_without_THz['E02'] = 0.0
-    
+
+    settings_without_THz['ZSTOP'] = settings['z_mirror'] + 0.005
         
     gpt_data = run_gpt_with_settings(settings=settings_without_THz,
                              gpt_input_file=gpt_input_file,
@@ -249,28 +290,54 @@ def run_gpt_with_analytic_THz(settings=None,
     scr = copy.deepcopy(get_screen_data(gpt_data, screen_z=settings['z_mirror'])[0])
     if (np.abs(scr['mean_z'] - settings['z_mirror']) > 1.0e-6):
         raise ValueError(f"Could not find screen at z = {settings['z_mirror']} in first run")
-
-    if ('best_E0' in settings and 'z_sample' in settings):
+    
+    phi0 = np.radians(settings['phi0'])
+    sigx = settings['sig_x']
+    sigt = settings['sig_t']
+    f = settings['center_frequency']
+    tht = np.radians(settings['theta_THz'])
+    thb = np.radians(settings['theta_beam'])
+    dt = settings['dt']
+    
+    if ('best_E0' in settings and 'z_best_E0' in settings):
         if (settings['best_E0'] == 1):
-            settings['E0'] = 1000
-            scr_test = get_analytic_scr(settings, scr, settings_to_guess(settings, settings['n_mirrors']))
-            L = settings['z_sample'] - settings['z_mirror']
+            E0 = 1000
+            scr_test = THz_lump_element(scr, E0, phi0, sigx, sigt, f, tht, thb, dt)
+            L = settings['z_best_E0'] - settings['z_mirror']
             scr_test.drift_to_t(scr_test['mean_t'])
             v1 = 299792458 * scr_test.beta_z
             v0 = 299792458 * scr.beta_z
             dv = v1 - v0
             t = L/np.mean(v0)
-            dz = scr_test.z + v0*t - settings['z_sample']
+            dz = scr_test.z + v0*t - settings['z_best_E0']
             alpha = - np.mean(dz*dv) / ((np.mean(dv*dv) - np.mean(dv)**2) * t)
-            if (verbose):
-                print(f'Changing E0 = {alpha*settings["E0"]}')
-            settings['E0'] = alpha*settings['E0']
-        
-    input_PG = get_analytic_scr(settings, scr)
+            
+            E0 = alpha*E0
+            print(f'Changing E0 to {E0}')
+    else:
+        E0 = settings['E0']
+
+    print('Applying THz pulse as lump element...')
+    input_PG = THz_lump_element(scr, E0, phi0, sigx, sigt, f, tht, thb, dt)
+    
+    if ('z_mirror2' in settings):
+        if (settings['z_mirror2'] == settings['z_mirror']):
+            print('Applying second THz pulse as lump element...')
+            E0 = settings['E02']
+            phi0 = np.radians(settings['phi02'])
+            sigx = settings['sig_x2']
+            sigt = settings['sig_t2']
+            f = settings['center_frequency']
+            tht = np.radians(settings['theta_THz'])
+            thb = np.radians(settings['theta_beam'])
+            dt = settings['dt2']
+            input_PG = THz_lump_element(input_PG, E0, phi0, sigx, sigt, f, tht, thb, dt)
+
     scr_after_THz = copy.deepcopy(input_PG)
     input_PG.drift_to_t(input_PG['mean_t'])
 
-    new_settings = copy.copy(settings_without_THz)
+    new_settings = copy.copy(settings)
+    new_settings['E0'] = 0.0 # make sure you don't get half of a THz pulse by accident
     new_settings['t_start'] = input_PG['mean_t']
     
     gpt_data2 = run_gpt_with_settings(settings=new_settings,
@@ -1592,6 +1659,7 @@ def get_distgen_beam_for_phasing_from_particlegroup(PG, n_particle=10, verbose=F
     phasing_distgen_input = {'n_particle':n_particle, 'random':{'type':'hammersley'}, 'transforms':transforms,
                              'total_charge':{'value':1.0, 'units':'pC'},
                              'species':'electron',
+                             'fix_avg_and_stds':False,
                              'start': {'type':'time', 'tstart':{'value': 0.0, 'units': 's'}},}
     
     gen = Generator(phasing_distgen_input, verbose=verbose) 
