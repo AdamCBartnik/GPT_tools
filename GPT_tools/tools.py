@@ -443,8 +443,10 @@ def hist2d(fig, ax, pmd, x, y, weights, color_var='density', bins=[100,100], col
         
     xcenters = 0.5*(xedges[0:-1] + xedges[1:])
     ycenters = 0.5*(yedges[0:-1] + yedges[1:])
-        
-    pc = ax.pcolor(xcenters, ycenters, H, cmap=colormap, shading='nearest', vmin=zmin, vmax=zmax)
+
+    ax.set_facecolor(colormap.get_bad())
+    
+    pc = ax.pcolormesh(xcenters, ycenters, H, cmap=colormap, shading='nearest', vmin=zmin, vmax=zmax)
     return plt.colorbar(pc, label=title_str, ax=ax)
     
 

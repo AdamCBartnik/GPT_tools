@@ -33,21 +33,47 @@ def MakeMetalParticleGroup(settings, DISTGEN_INPUT_FILE=None, verbose=True, only
     #    settings['cathode_z_offset'] : This value is overwritten or created in SI units, intended to be used in GPT
     #    settings['gun_field'] : This value is overwritten or created in SI units, intended to be used in GPT
 
-    (EexcAtSurface, EexcAtPeak, kT) = getEexc(settings, modify_settings=True, verbose=verbose)
+    (EexcAtSurface, EexcAtPeak, kT) = getMetalEexc(settings, modify_settings=True, verbose=verbose)
     
     if (only_survivors):
-        PG = MakeEnergyDist(get_cathode_particlegroup(settings, DISTGEN_INPUT_FILE=DISTGEN_INPUT_FILE), EexcAtPeak, kT)
+        PG = MakeMetalEnergyDist(get_cathode_particlegroup(settings, DISTGEN_INPUT_FILE=DISTGEN_INPUT_FILE), EexcAtPeak, kT)
         barrierV = EexcAtSurface - EexcAtPeak
         pz_min = 1010.93912*np.sqrt(barrierV) # goes from eV to eV/c for an electron
         print(f'Barrier min pz = {pz_min}')
         PG.pz = np.sqrt(PG.pz**2 + pz_min**2) # add energy to get over barrier
         
     else:
-        PG = MakeEnergyDist(get_cathode_particlegroup(settings, DISTGEN_INPUT_FILE=DISTGEN_INPUT_FILE), EexcAtSurface, kT)
+        PG = MakeMetalEnergyDist(get_cathode_particlegroup(settings, DISTGEN_INPUT_FILE=DISTGEN_INPUT_FILE), EexcAtSurface, kT)
     
     return PG
 
 
+# -----------------------------------------------------------------------------
+# This is one of the main functions
+# -----------------------------------------------------------------------------
+def MakeSemiconductorParticleGroup(settings, DISTGEN_INPUT_FILE=None, verbose=True):
+    # Makes a normal particlegroup using settings and DISTGEN_INPUT_FILE, and then overwrites the momentum distribution with
+    #    the distribution from a parabolic bands DOS model. Useful only for modeling individual electrons
+    #    
+    #    The following values in settings are needed:
+    #
+    #    settings['start:MTE:value'] : desired MTE (in the limit where the particles are far apart)
+    #    settings['kT:value'] : Temperature
+    #    settings['gun_field:value'] : Field at the cathode surface
+    #    Two choices to specify QE: (here, QE means the fraction of emitted electrons that have enough energy to get over the image charge barrier)
+    #          settings['QE'] : Directly set a QE (in the limit where the particles are far apart)
+    #          settings['cathode_z_offset:value'] : Directly set the cathode offset value in the image charge model
+    #
+    #    Note: two values of settings are modified (or added) in this code:
+    #    settings['cathode_z_offset'] : This value is overwritten or created in SI units, intended to be used in GPT
+    #    settings['gun_field'] : This value is overwritten or created in SI units, intended to be used in GPT
+
+    (EexcAtSurface, EexcAtPeak, EaSurf) = getSemiconductorEexc(settings, modify_settings=True, verbose=verbose)
+    
+    PG = MakeSemiconductorEnergyDist(get_cathode_particlegroup(settings, DISTGEN_INPUT_FILE=DISTGEN_INPUT_FILE), EexcAtSurface, EaSurf)
+    
+    return PG
+    
 
 # -----------------------------------------------------------------------------
 # This is one of the main functions
@@ -102,7 +128,7 @@ def getValueFromSettings(settings, value, desired_units, modify_settings=True, v
                 print(f'Need either (a) {value}:value and {value}:units or (b) {value} in settings')
     return val
     
-def getEexc(settings, modify_settings=True, verbose=True):
+def getMetalEexc(settings, modify_settings=True, verbose=True):
     # Gets the excess energy at both the peak of the image charge potential and the cathode surface
     # The final MTE of the bunch is just a function of the excess energy at the peak, while
     # the QE is a function of both
@@ -185,6 +211,48 @@ def getEexc(settings, modify_settings=True, verbose=True):
     
     return (EexcAtSurface, EexcAtPeak, kT)
 
+
+def getSemiconductorEexc(settings, modify_settings=True, verbose=True):
+    # Gets the excess energy at both the peak of the image charge potential and the cathode surface
+    # The final MTE of the bunch is just a function of the excess energy at the peak, while
+    # the QE is a function of both
+    #
+    # If modify_settings=True, then settings['cathode_z_offset'] and settings['gun_field'] are added to 
+    # the dictionary (to be used outside this function) in SI units. These are derived from value/unit pairs in settings
+    #
+    # Returns : (EexcAtSurface, EexcAtPeak, Ea + V(0))
+    
+    E1 = 1.43996455e-9  #  e^2/(4*pi*epsilon_0) in eV-meters
+
+    gun_field = getValueFromSettings(settings, 'gun_field', 'V/m', modify_settings=modify_settings, verbose=verbose)
+    z0 = getValueFromSettings(settings, 'cathode_z_offset', 'm', modify_settings=modify_settings, verbose=verbose)
+    plummer_radius = getValueFromSettings(settings, 'plummer_radius', 'm', modify_settings=modify_settings, verbose=verbose)
+
+    if (gun_field < 0):
+        if (verbose):
+            print('Warning: using opposite sign of gun field')
+        gun_field = np.abs(gun_field)
+    
+    Ea = getValueFromSettings(settings, 'electron_affinity', 'eV', modify_settings=False, verbose=False)
+    Eg = getValueFromSettings(settings, 'energy_gap', 'eV', modify_settings=False, verbose=False) 
+    hv = getValueFromSettings(settings, 'photon_energy', 'eV', modify_settings=False, verbose=False) 
+
+    if (z0 is None or Ea is None or Eg is None or hv is None):
+        print('Need to specify cathode_z_offset, electron_affinity, energy_gap, and photon_energy')
+        return None
+
+    EexcAtSurface = hv - Eg - Ea - ImagePotential(0, z0, plummer_radius, 0.0) # at z=0, doesn't depend on gun field
+    zpeak = PeakPotentialz(gun_field, z0, plummer_radius)
+    EexcAtPeak = hv - Eg - Ea - ImagePotential(zpeak, z0, plummer_radius, gun_field) 
+    
+    if (verbose):
+        print(f'Peak potential barrier at z = {1e9*zpeak:.3g} nm')
+        print(f'Eexc at surface = {EexcAtSurface}, Eexc at peak = {EexcAtPeak}')
+    
+    return (EexcAtSurface, EexcAtPeak, Ea + ImagePotential(0, z0, plummer_radius, gun_field))
+
+
+    
 def PeakPotentialz(E0, z0, r0):
     E1 = 1.43996455e-9  #  e^2/(4*pi*epsilon_0) in eV-meters
     
@@ -198,7 +266,28 @@ def PeakPotentialz(E0, z0, r0):
     
     # return 0.5*np.sqrt(E1/E0) - z0  # this is for r0 = 0, in case my crazy formula above doesn't work in some fringe case
 
-def MakeEnergyDist(pg, EexcAtSurface, kT):   
+
+def MakeSemiconductorEnergyDist(pg, EexcAtSurface, EaSurf):   
+    # Make energy distribution for the constant DoS model
+    #    EexcAtSurface: Excess energy at cathode surface, eV
+    
+    pnorm = 1010.93912  # sqrt(2* (electron mass) * (1 eV)) in eV/c
+    Ekin = invEcumulSemi(np.random.rand(len(pg)), EexcAtSurface, EaSurf)
+    (pr, pz) = uniform_pr2_dist(len(pg))
+    pz = np.abs(pz)    
+    pr = pr * pnorm * np.sqrt(Ekin)
+    pz = pz * pnorm * np.sqrt(Ekin)
+    phi = 2 * np.pi * np.random.rand(len(pg))
+    pg.pz = pz
+    pg.px = pr * np.cos(phi)
+    pg.py = pr * np.sin(phi)
+    
+    pg.weight = 1.60217663e-19
+    
+    return pg
+
+
+def MakeMetalEnergyDist(pg, EexcAtSurface, kT):   
     # Make energy distribution for the constant DoS model
     #    EexcAtSurface: Excess energy at cathode surface, eV
     #    kT: eV
@@ -290,7 +379,7 @@ def dE_QE_model(Eexcz, kT, Eexc0):
     #    kT : eV
     #    Eexc0 : Excess energy (at z=0) : eV
     return np.log(1.0 + np.exp(Eexc0/kT))*spence(np.exp(Eexcz/kT)+1.0)/spence(np.exp(Eexc0/kT)+1.0)**2/kT
-
+    
 def invEcumul(p, Eexc, kT, ptol=1.0e-7):
     # Uses Newton's method to invert the cumulative probability distribution of kinetic energy
     
@@ -351,3 +440,225 @@ def get_blank_particlegroup(n_particle, verbose=False):
     PG.id = np.arange(1, n_particle+1)
     
     return PG
+
+import numpy as np
+
+
+def _semi_support(Eexc, Ea):
+    """
+    Return the lower and upper kinetic-energy bounds for the semiconductor model.
+    """
+    if Ea >= 0:
+        Elo = 0.0
+    else:
+        Elo = -Ea
+
+    Ehi = Eexc
+
+    if Ehi <= Elo:
+        raise ValueError(
+            f"Invalid support: need Eexc > Elo, but got Eexc={Eexc}, Elo={Elo}."
+        )
+
+    return Elo, Ehi
+
+
+def _semi_antideriv(Ekin, Eexc, Ea):
+    """
+    Antiderivative of
+
+        Ekin * sqrt((Ea + Ekin) * (Eexc - Ekin))
+
+    on the interval
+
+        -Ea <= Ekin <= Eexc.
+
+    This is used to build the normalized CDF.
+    """
+    Ekin = np.asarray(Ekin, dtype=float)
+
+    m = 0.5 * (Eexc - Ea)
+    R = 0.5 * (Eexc + Ea)
+
+    if R <= 0:
+        raise ValueError("Need Eexc + Ea > 0 for a non-empty physical interval.")
+
+    t = (Ekin - m) / R
+
+    # Protect against roundoff at the endpoints.
+    t = np.clip(t, -1.0, 1.0)
+
+    s2 = np.maximum(0.0, 1.0 - t**2)
+    s = np.sqrt(s2)
+
+    return R**2 * (
+        0.5 * m * (t * s + np.arcsin(t))
+        - (R / 3.0) * s**3
+    )
+
+
+def EcumulprobSemi(Ekin, Eexc, Ea):
+    """
+    Cumulative probability distribution for the semiconductor kinetic-energy
+    distribution.
+
+    Parameters
+    ----------
+    Ekin : float or array_like
+        Kinetic energy.
+    Eexc : float
+        Excess energy.
+    Ea : float
+        Affinity-like energy parameter.
+
+    Returns
+    -------
+    F : float or ndarray
+        Cumulative probability.
+    """
+    scalar_input = np.isscalar(Ekin)
+    Ekin = np.asarray(Ekin, dtype=float)
+
+    Elo, Ehi = _semi_support(Eexc, Ea)
+
+    Eclip = np.clip(Ekin, Elo, Ehi)
+
+    A_lo = _semi_antideriv(Elo, Eexc, Ea)
+    A_hi = _semi_antideriv(Ehi, Eexc, Ea)
+    norm = A_hi - A_lo
+
+    F = (_semi_antideriv(Eclip, Eexc, Ea) - A_lo) / norm
+    F = np.clip(F, 0.0, 1.0)
+
+    if scalar_input:
+        return float(F)
+
+    return F
+
+
+def dEcumulprobSemi(Ekin, Eexc, Ea):
+    """
+    Derivative of the semiconductor CDF with respect to Ekin.
+    This is the normalized semiconductor kinetic-energy PDF.
+    """
+    scalar_input = np.isscalar(Ekin)
+    Ekin = np.asarray(Ekin, dtype=float)
+
+    Elo, Ehi = _semi_support(Eexc, Ea)
+
+    A_lo = _semi_antideriv(Elo, Eexc, Ea)
+    A_hi = _semi_antideriv(Ehi, Eexc, Ea)
+    norm = A_hi - A_lo
+
+    inside = (Ea + Ekin) * (Eexc - Ekin)
+    pdf = Ekin * np.sqrt(np.maximum(0.0, inside)) / norm
+
+    in_range = (Ekin >= Elo) & (Ekin <= Ehi)
+    pdf = np.where(in_range, pdf, 0.0)
+
+    if scalar_input:
+        return float(pdf)
+
+    return pdf
+
+
+def invEcumulSemi(p, Eexc, Ea, ptol=1.0e-7, max_iter=200):
+    """
+    Invert the semiconductor cumulative probability distribution.
+
+    Solves
+
+        EcumulprobSemi(Ekin, Eexc, Ea) = p
+
+    using safeguarded Newton iteration. The Newton step is clipped to stay
+    inside a bisection bracket, so this is much harder to break near endpoints.
+
+    Parameters
+    ----------
+    p : float or array_like
+        Cumulative probabilities in [0, 1].
+    Eexc : float
+        Excess energy.
+    Ea : float
+        Affinity-like energy parameter.
+    ptol : float
+        Absolute tolerance in cumulative probability.
+    max_iter : int
+        Maximum number of safeguarded Newton iterations.
+
+    Returns
+    -------
+    Ekin : float or ndarray
+        Kinetic energies sampled from the semiconductor distribution.
+    """
+    scalar_input = np.isscalar(p)
+    p = np.asarray(p, dtype=float)
+
+    if np.any((p < 0.0) | (p > 1.0)):
+        raise ValueError("p must be in the interval [0, 1].")
+
+    Elo, Ehi = _semi_support(Eexc, Ea)
+
+    # Exact endpoint handling.
+    Eout = np.empty_like(p, dtype=float)
+    at_low = p == 0.0
+    at_high = p == 1.0
+    active = ~(at_low | at_high)
+
+    Eout[at_low] = Elo
+    Eout[at_high] = Ehi
+
+    if np.any(active):
+        pp = p[active]
+
+        lo = np.full_like(pp, Elo, dtype=float)
+        hi = np.full_like(pp, Ehi, dtype=float)
+
+        # Initial guess: linear in CDF. Not perfect, but bracketed Newton fixes it.
+        x = Elo + pp * (Ehi - Elo)
+
+        for _ in range(max_iter):
+            F = EcumulprobSemi(x, Eexc, Ea)
+            err = F - pp
+
+            done = np.abs(err) <= ptol
+            if np.all(done):
+                break
+
+            # Update the brackets.
+            too_low = err < 0.0
+            lo = np.where(too_low, x, lo)
+            hi = np.where(too_low, hi, x)
+
+            pdf = dEcumulprobSemi(x, Eexc, Ea)
+
+            # Newton proposal.
+            with np.errstate(divide="ignore", invalid="ignore"):
+                x_newton = x - err / pdf
+
+            # Fall back to bisection if Newton is unsafe.
+            x_bisect = 0.5 * (lo + hi)
+
+            bad_newton = (
+                ~np.isfinite(x_newton)
+                | (x_newton <= lo)
+                | (x_newton >= hi)
+                | (pdf <= 0.0)
+            )
+
+            x_new = np.where(bad_newton, x_bisect, x_newton)
+
+            # Keep already-converged values fixed.
+            x = np.where(done, x, x_new)
+
+        else:
+            F = EcumulprobSemi(x, Eexc, Ea)
+            if np.any(np.abs(F - pp) > ptol):
+                raise RuntimeError("invEcumulSemi failed to converge for some entries.")
+
+        Eout[active] = x
+
+    if scalar_input:
+        return float(Eout)
+
+    return Eout

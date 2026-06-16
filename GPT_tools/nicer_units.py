@@ -17,12 +17,9 @@ def nicer_scale_prefix(scale, mm_cutoff=0.1):
         return 1, ''  
     
     scale_med_sub = copy.copy(scale)
-    #scale_med_sub = scale - np.nanmedian(scale)
-    max_val = np.nanmedian(np.abs(scale_med_sub))
-        
-    if max_val < 1e-28:
-        return 1, ''
-        
+    #max_val = np.nanmedian(np.abs(scale_med_sub))
+    max_val = np.nanmean(np.abs(scale_med_sub))
+                
     fudge_factor=10**(-3.0/2.0)/mm_cutoff
         
     max_power=3*np.sign(np.log10(max_val))*round(abs(np.log10(max_val*fudge_factor)/3))

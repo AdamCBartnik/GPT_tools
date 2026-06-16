@@ -529,6 +529,9 @@ def gpt_plot_dist2d(pmd, var1, var2, plot_type='histogram', units=None, fig=None
             y_range_max = x_range_max
         fig_ax[1].set_xlim([-x_range_max, x_range_max])
         fig_ax[1].set_ylim([-y_range_max, y_range_max])
+
+    if('axis' in params and params['axis']=='equal'):
+        fig_ax[1].set_aspect('equal', adjustable='box') # fig_ax[1].axis('equal')
         
     if ('xlim' in params):
         fig_ax[1].set_xlim(params['xlim'])
@@ -543,9 +546,6 @@ def gpt_plot_dist2d(pmd, var1, var2, plot_type='histogram', units=None, fig=None
     else:
         corxy_units = f'{x_units}·{y_units}'
         
-    if('axis' in params and params['axis']=='equal'):
-        fig_ax[1].axis('equal')
-    
     show_emit = False
     if ((var1 == 'x' and 'px' in var2 ) or (var1 == 'y' and 'py' in var2)):
         show_emit = True

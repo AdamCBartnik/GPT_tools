@@ -6,7 +6,7 @@ from gpt.gpt_phasing import gpt_phasing
 from .ParticleGroupExtension import ParticleGroupExtension
 from beamphysics import ParticleGroup
 from distgen import Generator
-from distgen.writers import write_gpt
+from beamphysics.interfaces.gpt import write_gpt
 from .tools import get_screen_data
 from .postprocess import kill_zero_weight, clip_to_charge, take_range, clip_to_emit
 from .cathode_particlegroup import get_coreshield_particlegroup, get_cathode_particlegroup
@@ -501,8 +501,8 @@ def run_gpt_with_settings(settings=None,
         G.verbose = verbose
 
         # Put settings into GPT object
-        for k, v in settings.items():
-            G.input['variables'][k]=v
+        # G.set_variables(settings)
+        G.input["variables"].update(settings)
 
         if(auto_phase): 
             # Zeroth pass = auto-phasing
@@ -516,7 +516,7 @@ def run_gpt_with_settings(settings=None,
             if(verbose):
                 print('****> Creating initial distribution for phasing...')
 
-            phasing_beam = get_distgen_beam_for_phasing_from_particlegroup(input_particle_group, n_particle=10, verbose=verbose)
+            phasing_beam = get_distgen_beam_for_phasing_from_particlegroup(input_particle_group, n_particle=10, verbose=verbose, output_PG=True)
             phasing_particle_file = os.path.join(G.path, 'gpt_particles.phasing.gdf')
             write_gpt(phasing_beam, phasing_particle_file, verbose=verbose, asci2gdf_bin=asci2gdf_bin)
 
@@ -524,10 +524,12 @@ def run_gpt_with_settings(settings=None,
                 print('<**** Created initial distribution for phasing.\n')    
 
             G.write_input_file()   # Write the unphased input file
-            phased_file_name, phased_settings = gpt_phasing(G.input_file, path_to_gpt_bin=G.gpt_bin[:-3], path_to_phasing_dist=phasing_particle_file, verbose=verbose)
-            
+            phased_file_name, phased_settings = gpt_phasing(G.input_file, path_to_phasing_dist=phasing_particle_file, verbose=verbose)
+
             # Put phased settings into GPT object
-            G.set_variables(phased_settings) # Note: G.set_variable(k,v) does not add items to the dictionary, not sure about this form of the function
+            #G.set_variables(phased_settings) # Note: G.set_variable(k,v) does not add items to the dictionary, not sure about this form of the function
+            G.input["variables"].update(phased_settings) # This should update everything (including gammas)
+
             t2 = time.time()
 
             if(verbose):
@@ -1170,7 +1172,7 @@ def run_gpt_with_particlegroup(settings=None,
         if(verbose):
             print('****> Creating initial distribution for phasing...')
 
-        phasing_beam = get_distgen_beam_for_phasing_from_particlegroup(input_particle_group, n_particle=10, verbose=verbose)
+        phasing_beam = get_distgen_beam_for_phasing_from_particlegroup(input_particle_group, n_particle=10, verbose=verbose,  output_PG=True)
         phasing_particle_file = os.path.join(G.path, 'gpt_particles.phasing.gdf')
         write_gpt(phasing_beam, phasing_particle_file, verbose=verbose, asci2gdf_bin=asci2gdf_bin)
     
@@ -1179,8 +1181,9 @@ def run_gpt_with_particlegroup(settings=None,
 
         G.write_input_file()   # Write the unphased input file
 
-        phased_file_name, phased_settings = gpt_phasing(G.input_file, path_to_gpt_bin=G.gpt_bin[:-3], path_to_phasing_dist=phasing_particle_file, verbose=verbose)
-        G.set_variables(phased_settings)
+        phased_file_name, phased_settings = gpt_phasing(G.input_file, path_to_phasing_dist=phasing_particle_file, verbose=verbose)
+        G.input["variables"].update(phased_settings) # This should update everything (including gammas)
+        #G.set_variables(phased_settings)
         t2 = time.time()
 
         if(verbose):

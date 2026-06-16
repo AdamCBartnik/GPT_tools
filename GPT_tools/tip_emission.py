@@ -167,7 +167,7 @@ def PlaneIntersection(x0, y0, z0, theta):
 
 def tip_height(r, H, B):
     scalar_input = np.isscalar(r)
-    r_arr = np.array(r, copy=False, ndmin=1, dtype=float)  # now r_arr.shape is (n,) or (1,) for a scalar
+    r_arr = np.array(r, ndmin=1, dtype=float)  # now r_arr.shape is (n,) or (1,) for a scalar
 
     h_arr = np.zeros_like(r_arr)
 
