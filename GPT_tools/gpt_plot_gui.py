@@ -260,7 +260,10 @@ def gpt_plot_gui(gpt_data_input):
                 params['axis'] = 'equal'
             (table_widget, colorbar_instance) = gpt_plot_dist2d(gpt_data, dist_x, dist_y, plot_type=ptype, nbins=nbins, fig_ax=(gui_fig, gui_ax), **params)
             gui.children += (table_widget, )
-        display(gui)    
+        # The GUI updates in place (gui_ax.cla / reassigning gui.children); it
+        # is displayed once via the object returned by gpt_plot_gui(). Calling
+        # display(gui) on every callback caused duplicate/raced renders,
+        # especially under ipykernel 7 subshells.
             
     # Callback functions
     def remake_on_value_change(change):
@@ -412,7 +415,7 @@ def gpt_plot_gui(gpt_data_input):
     log_checkbox.observe(remake_on_value_change, names='value')
     cursor_checkbox.observe(remake_on_value_change, names='value')
         
-    #return gui
+    return gui
 
 
 
