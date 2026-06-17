@@ -224,7 +224,7 @@ def gpt_plot_dist1d(pmd, var, plot_type='charge', units=None, fig_ax=None, table
         
     min_particles = 1
     needs_many_particles_types = {'norm_emit', 'sigma'}
-    if any([d in plot_type for d in positive_types]):
+    if any([d in plot_type for d in needs_many_particles_types]):
         min_particles = 3
         
     if (fig_ax==None):
