@@ -253,7 +253,7 @@ def remove_correlation(screen_input, var1, var2, max_power, make_copy=False):
     w = screen.weight
     w_sum = np.sum(w)
     x_mean = np.sum(x*w)/w_sum
-    y_mean = np.sum(x*w)/w_sum
+    y_mean = np.sum(y*w)/w_sum
     
     c = poly.polyfit(x-x_mean, y-y_mean, max_power, w=w)
     y_fit = poly.polyval(x-x_mean, c)+y_mean
