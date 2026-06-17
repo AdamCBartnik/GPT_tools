@@ -35,10 +35,10 @@ def gpt_plot_gui(gpt_data_input):
     screen_type_list = ['Special', 'All']
     if (len(special_z_list) == 0):
         screen_type_dropdown = widgets.Dropdown(options=[(a, i) for (i,a) in enumerate(screen_type_list)], value=1, layout=layout_150px)
-        screen_z_dropdown = widgets.Dropdown(options=[(f'{z:.3f}', i) for (i,z) in enumerate(screen_z_list)], layout=layout_150px)
+        screen_z_dropdown = widgets.Dropdown(options=[(f'{z:.6f}', i) for (i,z) in enumerate(screen_z_list)], layout=layout_150px)
     else:
         screen_type_dropdown = widgets.Dropdown(options=[(a, i) for (i,a) in enumerate(screen_type_list)], value=0, layout=layout_150px)
-        screen_z_dropdown = widgets.Dropdown(options=[(f'{z:.3f}', i) for (i,z) in enumerate(special_z_list)], layout=layout_150px)
+        screen_z_dropdown = widgets.Dropdown(options=[(f'{z:.6f}', i) for (i,z) in enumerate(special_z_list)], layout=layout_150px)
     
     trend_x_list = ['z', 't']
     trend_y_list = ['Beam Size', 'Bunch Length', 'Emittance (x,y)', 'Emittance (4D)', 'Slice emit. (x,y)', 'Slice emit. (4D)', 'Charge', 'Kinetic Energy', 'Energy Spread', 'Trajectory', 'MTE']
@@ -47,7 +47,7 @@ def gpt_plot_gui(gpt_data_input):
     trend_slice_var_dropdown = widgets.Dropdown(options=[(a, i) for (i,a) in enumerate(dist_list)], value=0, layout=layout_150px)
     trend_slice_nslices_text = widgets.BoundedIntText(value=50, min=5, max=500, step=1, layout=layout_150px)
     trend_survivors_checkbox = widgets.Checkbox(value=False,description='Enabled',disabled=False,indent=False, layout=layout_100px)
-    trend_survivors_screen_z_dropdown = widgets.Dropdown(options=[(f'{z:.3f}', i) for (i,z) in enumerate(screen_z_list)], layout=layout_100px)
+    trend_survivors_screen_z_dropdown = widgets.Dropdown(options=[(f'{z:.6f}', i) for (i,z) in enumerate(screen_z_list)], layout=layout_100px)
     
     dist_x_1d_dropdown = widgets.Dropdown(options=[(a, i) for (i,a) in enumerate(dist_list)], value=0, layout=layout_150px)
     dist_type_1d_list = ['Charge Density', 'Emittance X', 'Emittance Y', 'Emittance 4D', 'Sigma X', 'Sigma Y', 'Sigma E']
@@ -59,13 +59,13 @@ def gpt_plot_gui(gpt_data_input):
     dist2d_color_dropdown = widgets.Dropdown(options=[(a, i) for (i,a) in enumerate(scatter_color)], value=0, layout=layout_150px)
     dist2d_color_source_dropdown = widgets.Dropdown(options=[('Same screen', 'same'), ('Alternate screen', 'alt')], value='same', layout=layout_150px)
     dist2d_color_screen_type_dropdown = widgets.Dropdown(options=[(a, i) for (i,a) in enumerate(screen_type_list)], value=0, layout=layout_150px)
-    dist2d_color_screen_z_dropdown = widgets.Dropdown(options=[(f'{z:.3f}', i) for (i,z) in enumerate(special_z_list)], layout=layout_100px)
+    dist2d_color_screen_z_dropdown = widgets.Dropdown(options=[(f'{z:.6f}', i) for (i,z) in enumerate(special_z_list)], layout=layout_100px)
     
     dist_x_dropdown = widgets.Dropdown(options=[(a, i) for (i,a) in enumerate(dist_list)], value=1, layout=layout_150px)
     dist_y_dropdown = widgets.Dropdown(options=[(a, i) for (i,a) in enumerate(dist_list)], value=2, layout=layout_150px)
     dist_y_source_dropdown = widgets.Dropdown(options=[('Same screen', 'same'), ('Alternate screen', 'alt')], value='same', layout=layout_150px)
     dist_y_screen_type_dropdown = widgets.Dropdown(options=[(a, i) for (i,a) in enumerate(screen_type_list)], value=0, layout=layout_150px)
-    dist_y_screen_z_dropdown = widgets.Dropdown(options=[(f'{z:.3f}', i) for (i,z) in enumerate(special_z_list)], layout=layout_100px)
+    dist_y_screen_z_dropdown = widgets.Dropdown(options=[(f'{z:.6f}', i) for (i,z) in enumerate(special_z_list)], layout=layout_100px)
     
     axis_equal_checkbox = widgets.Checkbox(value=False,description='Enabled',disabled=False,indent=False, layout=layout_100px)
     nbin_x_text = widgets.BoundedIntText(value=50, min=5, max=500, step=1, layout=layout_150px)
