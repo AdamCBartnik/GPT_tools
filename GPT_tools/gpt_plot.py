@@ -371,15 +371,15 @@ def gpt_plot_dist1d(pmd, var, plot_type='charge', units=None, fig_ax=None, table
     
     
     
-def gpt_plot_dist2d(pmd, var1, var2, plot_type='histogram', units=None, fig=None, table_fig=None, table_on=True, plot_width=500, plot_height=400, 
+def gpt_plot_dist2d(pmd, var1, var2, plot_type='histogram', units=None, table_fig=None, table_on=True, plot_width=600, plot_height=400,
                     return_data=False, x_subtract_mean='auto', y_subtract_mean='auto', fig_ax=None, **params):
 
     if (fig_ax==None):
         show_plot = True
-        fig_ax = make_default_plot(plot_width=600, plot_height=400, **params)
+        fig_ax = make_default_plot(plot_width=plot_width, plot_height=plot_height, **params)
     else:
         show_plot = False
-        fig_ax[0].set_size_inches(600/fig_ax[0].dpi, 400/fig_ax[0].dpi)
+        fig_ax[0].set_size_inches(plot_width/fig_ax[0].dpi, plot_height/fig_ax[0].dpi)
     
     screen_key = None
     screen_value = None
