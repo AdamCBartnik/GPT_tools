@@ -321,7 +321,7 @@ def add_row(data, **params):
 
 
 
-def scatter_color(fig, ax, pmd, x, y, weights=None, color_var='density', bins=100, colormap=mpl.cm.get_cmap('jet'), is_radial_var=[False, False], zlim=None):
+def scatter_color(fig, ax, pmd, x, y, weights=None, color_var='density', bins=100, colormap=mpl.colormaps['jet'], is_radial_var=[False, False], zlim=None):
     
     force_zero = False
     use_separate_data = False
@@ -376,7 +376,7 @@ def scatter_color(fig, ax, pmd, x, y, weights=None, color_var='density', bins=10
         
         
         
-def hist2d(fig, ax, pmd, x, y, weights, color_var='density', bins=[100,100], colormap=mpl.cm.get_cmap('jet'), is_radial_var=[False,False], zlim=None):
+def hist2d(fig, ax, pmd, x, y, weights, color_var='density', bins=[100,100], colormap=mpl.colormaps['jet'], is_radial_var=[False,False], zlim=None):
     force_zero = False
     use_separate_data = False
             

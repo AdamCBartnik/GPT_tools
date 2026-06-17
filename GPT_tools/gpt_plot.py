@@ -417,11 +417,11 @@ def gpt_plot_dist2d(pmd, var1, var2, plot_type='histogram', units=None, fig=None
         
     if ('colormap' in params):
         if type(params['colormap']) == str:
-            colormap = mpl.cm.get_cmap(params['colormap'])
+            colormap = mpl.colormaps[params['colormap']]
         else:
             colormap = params['colormap']
     else:
-        colormap = mpl.cm.get_cmap('jet') 
+        colormap = mpl.colormaps['jet']
 
     zlim = None
     if ('zlim' in params):
