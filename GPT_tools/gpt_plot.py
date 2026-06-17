@@ -549,9 +549,10 @@ def gpt_plot_dist2d(pmd, var1, var2, plot_type='histogram', units=None, table_fi
     show_emit = False
     if ((var1 == 'x' and 'px' in var2 ) or (var1 == 'y' and 'py' in var2)):
         show_emit = True
-        factor = c_light**2 /e_charge # kg -> eV
-        particle_mass = 9.10938356e-31  # kg
-        emitxy = (x_scale*y_scale/factor/particle_mass)*np.sqrt(stdx**2 * stdy**2 - corxy**2)
+        # pmd.mass is the species rest energy in eV; for an electron this is
+        # numerically identical to the old (c_light**2/e_charge)/m_e form, but
+        # now correct for any species GPT tracks.
+        emitxy = (x_scale*y_scale/pmd.mass)*np.sqrt(stdx**2 * stdy**2 - corxy**2)
         (emitxy, emitxy_units, emitxy_scale) = scale_and_get_units(emitxy, pmd.units(var1).unitSymbol)
     
     if(table_on):
