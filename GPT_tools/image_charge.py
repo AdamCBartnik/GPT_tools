@@ -39,8 +39,8 @@ def MakeMetalParticleGroup(settings, DISTGEN_INPUT_FILE=None, verbose=True, only
         PG = MakeMetalEnergyDist(get_cathode_particlegroup(settings, DISTGEN_INPUT_FILE=DISTGEN_INPUT_FILE), EexcAtPeak, kT)
         barrierV = EexcAtSurface - EexcAtPeak
         pz_min = 1010.93912*np.sqrt(barrierV) # goes from eV to eV/c for an electron
-        print(f'Barrier min pz = {pz_min}')
         PG.pz = np.sqrt(PG.pz**2 + pz_min**2) # add energy to get over barrier
+        #PG.pz = PG.pz + pz_min  # this is wrong, temporary, please delete and replace with line above
         
     else:
         PG = MakeMetalEnergyDist(get_cathode_particlegroup(settings, DISTGEN_INPUT_FILE=DISTGEN_INPUT_FILE), EexcAtSurface, kT)
@@ -51,7 +51,7 @@ def MakeMetalParticleGroup(settings, DISTGEN_INPUT_FILE=None, verbose=True, only
 # -----------------------------------------------------------------------------
 # This is one of the main functions
 # -----------------------------------------------------------------------------
-def MakeSemiconductorParticleGroup(settings, DISTGEN_INPUT_FILE=None, verbose=True):
+def MakeSemiconductorParticleGroup(settings, DISTGEN_INPUT_FILE=None, verbose=True, only_survivors=False):
     # Makes a normal particlegroup using settings and DISTGEN_INPUT_FILE, and then overwrites the momentum distribution with
     #    the distribution from a parabolic bands DOS model. Useful only for modeling individual electrons
     #    
@@ -69,8 +69,27 @@ def MakeSemiconductorParticleGroup(settings, DISTGEN_INPUT_FILE=None, verbose=Tr
     #    settings['gun_field'] : This value is overwritten or created in SI units, intended to be used in GPT
 
     (EexcAtSurface, EexcAtPeak, EaSurf) = getSemiconductorEexc(settings, modify_settings=True, verbose=verbose)
-    
-    PG = MakeSemiconductorEnergyDist(get_cathode_particlegroup(settings, DISTGEN_INPUT_FILE=DISTGEN_INPUT_FILE), EexcAtSurface, EaSurf)
+
+    if (only_survivors):
+        # Do it the dumb way-- just make way too many particles and truncate
+        PG = MakeSemiconductorEnergyDist(get_cathode_particlegroup(settings, DISTGEN_INPUT_FILE=DISTGEN_INPUT_FILE), EexcAtSurface, EaSurf)
+        barrierV = EexcAtSurface - EexcAtPeak
+        pz_min = 1010.93912*np.sqrt(barrierV) # goes from eV to eV/c for an electron
+        if (verbose):
+            print(f'Keeping only particles with pz > {pz_min}')
+        settings_copy = copy.copy(settings)
+        while(np.count_nonzero(PG.pz>=pz_min) < settings['n_particle']):
+            fudge_factor = np.min([3, settings['n_particle'] / (np.count_nonzero(PG.pz>=pz_min) + 1)])
+            settings_copy['n_particle'] = np.ceil(settings_copy['n_particle']*fudge_factor)
+            if (verbose):
+                print(f'Creating {settings_copy['n_particle']} particles to try to truncate to {settings['n_particle']}.')
+            PG = MakeSemiconductorEnergyDist(get_cathode_particlegroup(settings_copy, DISTGEN_INPUT_FILE=DISTGEN_INPUT_FILE), EexcAtSurface, EaSurf) 
+        PG = PG[PG.pz>=pz_min]
+        which_particles_to_keep = np.random.default_rng().choice(np.arange(0,len(PG)), size=settings['n_particle'], replace=False)
+        PG = PG[which_particles_to_keep]
+        PG.id = np.arange(1, settings['n_particle']+1)
+    else:
+        PG = MakeSemiconductorEnergyDist(get_cathode_particlegroup(settings, DISTGEN_INPUT_FILE=DISTGEN_INPUT_FILE), EexcAtSurface, EaSurf)
     
     return PG
     
@@ -95,12 +114,12 @@ def MakeEnergyOffsetParticleGroup(settings, DISTGEN_INPUT_FILE=None, verbose=Tru
                     
     zpeak = PeakPotentialz(gun_field, z0, plummer_radius)
     barrierV = ImagePotential(zpeak, z0, plummer_radius, gun_field) - ImagePotential(0, z0, plummer_radius, gun_field)
-    
+
     delta_pz = 1010.93912*np.sqrt(barrierV) # goes from eV to eV/c for an electron
-        
     PG = get_cathode_particlegroup(settings, DISTGEN_INPUT_FILE=DISTGEN_INPUT_FILE)
     PG.pz = np.sqrt(PG.pz**2 + delta_pz**2)  # add energy to get over barrier
-    pg.weight = 1.60217663e-19   # force single electrons
+    #PG.pz = PG.pz + delta_pz  # this is wrong, temporary, please delete and replace with line above
+    PG.weight = 1.60217663e-19   # force single electrons
     
     return PG
 
@@ -195,18 +214,24 @@ def getMetalEexc(settings, modify_settings=True, verbose=True):
         EexcAtSurface = EexcAtPeak + barrierV
         
     QEatPeak = QE_model(EexcAtPeak, kT, EexcAtSurface)
+    MTEatPeak = MTE_model(EexcAtPeak, kT)
     
      # Update settings 
     if (modify_settings and 'QE' not in settings):
         settings['QE'] = QEatPeak
         if (verbose):
             print(f'Adding settings["QE"] = {settings["QE"]} for use in GPT')
+
+    if (modify_settings and 'MTE' not in settings):
+        settings['MTE'] = MTEatPeak
+        if (verbose):
+            print(f'Adding settings["MTE"] = {settings["MTE"]} for use in GPT')
     
     if (verbose):
         print(f'Initial N = {settings["n_particle"]:.0f} particles = {1.60217663e-1*settings["n_particle"]:.3g} aC')
         print(f'Predicted final N = {settings["n_particle"]*QEatPeak:.1f} particles = {1.60217663e-1*settings["n_particle"]*QEatPeak:.3g} aC = {100*QEatPeak:.3g}% QE')
-        print(f'Predicted final MTE = {1e3*MTE_model(EexcAtPeak, kT):.3g} meV')
-        print(f'Peak potential barrier at z = {1e9*zpeak:.3g} nm')
+        print(f'Predicted final MTE = {1e3*MTEatPeak:.3g} meV')
+        print(f'Peak potential barrier at z = {1e9*zpeak:.5g} nm')
         print(f'Eexc at surface = {EexcAtSurface}, Eexc at peak = {EexcAtPeak}, kT = {kT}')
     
     return (EexcAtSurface, EexcAtPeak, kT)
@@ -367,6 +392,47 @@ def QE_model(Eexcz, kT, Eexc0):
     #    Eexc0 : Excess energy (at z=0) : eV
     return spence(np.exp(Eexcz/kT)+1.0)/spence(np.exp(Eexc0/kT)+1.0)
 
+def MTE_model_semi(h, v, ea):
+    # h = hv-Eg, 
+    # v = ImagePotential(z, z0, plummer_radius, gun_field)
+    # ea = Ea
+    out = np.empty_like(v, dtype=float)
+    m = ea + v > 0
+
+    x = v[m]
+    s = np.sqrt(-1 + h/(ea + x))*np.arcsin(np.sqrt(-(ea - h + x)/h))
+    k = (ea - h + x)*(4*ea**2 - 4*ea*h + 3*h**2 + 8*ea*x - 4*h*x + 4*x**2) - 3*h**2*(-2*ea + h - 2*x)*s
+    n = (ea - h + x)*(2*ea - h + 2*x)*(8*ea**2 + 15*h**2 - 8*ea*(h - 2*x) - 8*h*x + 8*x**2) + 3*h**2*(16*ea**2 + 5*h**2 - 16*ea*(h - 2*x) - 16*h*x + 16*x**2)*s
+    out[m] = -n/(16*k)
+
+    x = v[~m]
+    out[~m] = (5*h**2 + 16*(ea + x)*(ea - h + x))/(16*(-2*ea + h - 2*x))
+    return out
+
+
+def QE_model_semi(h, v, v0, ea):
+    # h = hv-Eg, 
+    # v = ImagePotential(z, z0, plummer_radius, gun_field)
+    # v0 = ImagePotential(0, z0, plummer_radius, gun_field)
+    # ea = Ea
+    out = np.empty_like(v, dtype=float)
+
+    m = ea + v0 > 0
+    x, x0 = v[m], v0[m]
+    S = lambda y: np.sqrt(-1 + h/(ea + y))*np.arcsin(np.sqrt(-(ea - h + y)/h))
+    K = lambda y: (ea - h + y)*(4*ea**2 - 4*ea*h + 3*h**2 + 8*ea*y - 4*h*y + 4*y**2) - 3*h**2*(-2*ea + h - 2*y)*S(y)
+    out[m] = np.sqrt(-(ea + x)/(ea - h + x))*K(x)/(np.sqrt(-(ea + x0)/(ea - h + x0))*K(x0))
+
+    m1 = (~m) & (ea + v > 0)
+    x, x0 = v[m1], v0[m1]
+    s = np.sqrt(-1 + h/(ea + x))*np.arcsin(np.sqrt(-(ea - h + x)/h))
+    k = (ea - h + x)*(4*ea**2 - 4*ea*h + 3*h**2 + 8*ea*x - 4*h*x + 4*x**2) - 3*h**2*(-2*ea + h - 2*x)*s
+    out[m1] = -(2*np.sqrt(-(ea + x)/(ea - h + x))*k)/(3*h**2*np.pi*(-2*ea + h - 2*x0))
+
+    m2 = ~(m | m1)
+    out[m2] = (-2*ea + h - 2*v[m2])/(-2*ea + h - 2*v0[m2])
+    return out
+    
 def dE_MTE_model(Eexcz, kT):
     # Derivative of MTE w.r.t. Eexcz
     #    Eexcz : Excess energy (at position z) : eV
