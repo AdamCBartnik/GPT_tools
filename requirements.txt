@@ -1,0 +1,27 @@
+# Core scientific stack
+numpy
+scipy
+matplotlib
+pandas
+sympy
+mpmath
+pyyaml
+
+# Beam dynamics
+# lume-gpt provides the `gpt` module (and needs the external GPT + asci2gdf binaries)
+lume-gpt
+distgen
+# openPMD-beamphysics provides the `beamphysics` module used throughout
+openPMD-beamphysics
+pint
+
+# Optimization
+xopt
+
+# Notebook GUIs (use with the ipympl / "widget" matplotlib backend in Jupyter)
+ipywidgets
+ipympl
+
+# Misc utilities
+psutil
+fastnumbers
