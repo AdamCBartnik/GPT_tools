@@ -80,12 +80,12 @@ def show_fronts(pop_number, obj1_key, obj2_key, obj3_key=None,
             if (zlim is not None):
                 sc = fig_ax[1].scatter(obj1[not_nan], obj2[not_nan], 10, c=obj3[not_nan], cmap='jet', vmin=zlim[0], vmax=zlim[1], marker=dot_style, zorder=zorder)
                 if (legend_color is None):
-                    cmap = cm.get_cmap('jet')
+                    cmap = plt.get_cmap('jet')
                     #legend_color = cmap(np.median(obj3[not_nan]))
             else:
                 sc = plt.scatter(obj1[not_nan], obj2[not_nan], 10, c=obj3[not_nan], cmap='jet', marker=dot_style, zorder=zorder)
                 if (legend_color is None):
-                    cmap = cm.get_cmap('jet')
+                    cmap = plt.get_cmap('jet')
                     #legend_color = cmap(np.median(obj3[not_nan]))
             if (colorbar):
                 cbar = plt.colorbar(sc)

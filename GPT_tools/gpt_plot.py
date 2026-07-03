@@ -1,16 +1,27 @@
+import copy
 import numpy as np
 import matplotlib as mpl
 from gpt import GPT
-from .tools import *
-from .nicer_units import *
+from .tools import (make_default_plot, format_label, get_y_label, std_weights, corr_weights,
+                    duplicate_points_for_hist_plot, special_screens, get_screen_data,
+                    scale_and_get_units, scale_mean_and_get_units, apply_user_units, check_mu,
+                    pad_data_with_zeros, check_subtract_mean, add_row, scatter_color, hist2d,
+                    warn_unrecognized_params, SCREEN_SELECT_PARAMS, POSTPROCESS_PARAMS)
+from .nicer_units import nicer_array
 from .postprocess import postprocess_screen
-from beamphysics.units import c_light, e_charge
 from .ParticleGroupExtension import ParticleGroupExtension, convert_gpt_data, divide_particles
 from ipywidgets import HBox
 import ipywidgets as widgets
 from GPT_tools.SnappingCursor import SnappingCursor
 import pandas as pd
 import random
+
+# Parameters each plotting function accepts through **params (see tools.py)
+GPT_PLOT_PARAMS = POSTPROCESS_PARAMS | {'color', 'xlim', 'ylim', 'log_scale', 'slice_key', 'n_slices', 'dpi'}
+GPT_PLOT_DIST1D_PARAMS = SCREEN_SELECT_PARAMS | POSTPROCESS_PARAMS | {'nbins', 'color', 'xlim', 'ylim', 'dpi'}
+GPT_PLOT_DIST2D_PARAMS = SCREEN_SELECT_PARAMS | POSTPROCESS_PARAMS | {'nbins', 'colormap', 'zlim', 'clim', 'axis',
+                                                                      'color_var', 'centered_at_zero', 'xlim', 'ylim', 'dpi'}
+GPT_PLOT_TRAJECTORY_PARAMS = POSTPROCESS_PARAMS | {'xlim', 'ylim', 'dpi'}
 
 def make_dataframe_widget(df):
     out = widgets.Output()
@@ -20,11 +31,21 @@ def make_dataframe_widget(df):
 
 def gpt_plot(gpt_data_input, var1, var2, units=None, fig_ax=None, format_input_data=True, show_survivors_at_z=None, show_survivors_after_z=None, 
              show_screens=True, show_cursor=True, return_data=False, legend=True, **params):
+    warn_unrecognized_params(params, GPT_PLOT_PARAMS, 'gpt_plot')
     if (format_input_data):
         gpt_data = convert_gpt_data(gpt_data_input)
     else:
         gpt_data = copy.deepcopy(gpt_data_input)
-    
+
+    # Slice statistics (e.g. slice_emit_x) are computed per screen using the
+    # slice_key and n_slices attributes of each ParticleGroupExtension
+    if (('slice_key' in params) or ('n_slices' in params)):
+        for s in gpt_data.particles:
+            if ('slice_key' in params):
+                s.slice_key = params['slice_key']
+            if ('n_slices' in params):
+                s.n_slices = params['n_slices']
+
     if (show_survivors_after_z is not None):
         show_survivors_at_z = show_survivors_after_z
         show_survivors_after_z = True
@@ -96,15 +117,7 @@ def gpt_plot(gpt_data_input, var1, var2, units=None, fig_ax=None, format_input_d
                 
     # overwrite with user units
     if (units is not None):
-        base_units = gpt_data.units(var2[0]).unitSymbol
-        if (units.endswith(base_units)):
-            all_y = all_y * y_scale
-            y_units = units
-            y_scale = SHORT_PREFIX_FACTOR[units[:-len(base_units)]]
-            all_y = all_y / y_scale
-        else:
-            print('Incorrect units specified')
-            units = None
+        (all_y, y_units, y_scale) = apply_user_units(all_y, y_units, y_scale, units, gpt_data.units(var2[0]).unitSymbol)
 
     # Make sure the order of the x values is monotonic
     xi = np.argsort(x)
@@ -203,6 +216,7 @@ def gpt_plot(gpt_data_input, var1, var2, units=None, fig_ax=None, format_input_d
 
 
 def gpt_plot_dist1d(pmd, var, plot_type='charge', units=None, fig_ax=None, table_fig=None, table_on=True, subtract_mean='auto', **params):
+    warn_unrecognized_params(params, GPT_PLOT_DIST1D_PARAMS, 'gpt_plot_dist1d')
     screen_key = None
     screen_value = None
     if (isinstance(pmd, GPT)):
@@ -224,7 +238,7 @@ def gpt_plot_dist1d(pmd, var, plot_type='charge', units=None, fig_ax=None, table
         
     min_particles = 1
     needs_many_particles_types = {'norm_emit', 'sigma'}
-    if any([d in plot_type for d in positive_types]):
+    if any([d in plot_type for d in needs_many_particles_types]):
         min_particles = 3
         
     if (fig_ax==None):
@@ -260,16 +274,8 @@ def gpt_plot_dist1d(pmd, var, plot_type='charge', units=None, fig_ax=None, table
     (x, x_units, x_scale, mean_x, mean_x_units, mean_x_scale) = scale_mean_and_get_units(getattr(pmd, var), pmd.units(var).unitSymbol,
                                                                                          subtract_mean=subtract_mean, weights=q)
     
-    if (units is not None):       
-        # Replace X units
-        base_units = pmd.units(var).unitSymbol
-        if (units.endswith(base_units)):
-            x = x * x_scale
-            x_units = units
-            x_scale = SHORT_PREFIX_FACTOR[units[:-len(base_units)]]
-            x = x / x_scale
-        else:
-            print('Incorrect units specified')
+    if (units is not None):
+        (x, x_units, x_scale) = apply_user_units(x, x_units, x_scale, units, pmd.units(var).unitSymbol)
     
     # Assume user supplied values to subtract in units that were plotted, or that they specified
     if (user_reference is not None):
@@ -371,15 +377,16 @@ def gpt_plot_dist1d(pmd, var, plot_type='charge', units=None, fig_ax=None, table
     
     
     
-def gpt_plot_dist2d(pmd, var1, var2, plot_type='histogram', units=None, fig=None, table_fig=None, table_on=True, plot_width=500, plot_height=400, 
+def gpt_plot_dist2d(pmd, var1, var2, plot_type='histogram', units=None, table_fig=None, table_on=True, plot_width=600, plot_height=400,
                     return_data=False, x_subtract_mean='auto', y_subtract_mean='auto', fig_ax=None, **params):
+    warn_unrecognized_params(params, GPT_PLOT_DIST2D_PARAMS, 'gpt_plot_dist2d')
 
     if (fig_ax==None):
         show_plot = True
-        fig_ax = make_default_plot(plot_width=600, plot_height=400, **params)
+        fig_ax = make_default_plot(plot_width=plot_width, plot_height=plot_height, **params)
     else:
         show_plot = False
-        fig_ax[0].set_size_inches(600/fig_ax[0].dpi, 400/fig_ax[0].dpi)
+        fig_ax[0].set_size_inches(plot_width/fig_ax[0].dpi, plot_height/fig_ax[0].dpi)
     
     screen_key = None
     screen_value = None
@@ -417,11 +424,11 @@ def gpt_plot_dist2d(pmd, var1, var2, plot_type='histogram', units=None, fig=None
         
     if ('colormap' in params):
         if type(params['colormap']) == str:
-            colormap = mpl.cm.get_cmap(params['colormap'])
+            colormap = mpl.colormaps[params['colormap']]
         else:
             colormap = params['colormap']
     else:
-        colormap = mpl.cm.get_cmap('jet') 
+        colormap = mpl.colormaps['jet']
 
     zlim = None
     if ('zlim' in params):
@@ -467,28 +474,8 @@ def gpt_plot_dist2d(pmd, var1, var2, plot_type='histogram', units=None, fig=None
             
     # overwrite with user units
     if (units is not None):
-        user_x_units = units[0]
-        user_y_units = units[1]
-        
-        # Replace X units
-        base_units = pmd.units(var1).unitSymbol
-        if (user_x_units.endswith(base_units)):
-            x = x * x_scale
-            x_units = user_x_units
-            x_scale = SHORT_PREFIX_FACTOR[user_x_units[:-len(base_units)]]
-            x = x / x_scale
-        else:
-            print('Incorrect units specified')
-        
-        # Replace Y units
-        base_units = pmd.units(var2).unitSymbol
-        if (user_y_units.endswith(base_units)):
-            y = y * y_scale
-            y_units = user_y_units
-            y_scale = SHORT_PREFIX_FACTOR[user_y_units[:-len(base_units)]]
-            y = y / y_scale
-        else:
-            print('Incorrect units specified')
+        (x, x_units, x_scale) = apply_user_units(x, x_units, x_scale, units[0], pmd.units(var1).unitSymbol)
+        (y, y_units, y_scale) = apply_user_units(y, y_units, y_scale, units[1], pmd.units(var2).unitSymbol)
 
     if (user_x_reference is not None):
         x = (x*x_scale - user_x_reference)/x_scale
@@ -532,6 +519,10 @@ def gpt_plot_dist2d(pmd, var1, var2, plot_type='histogram', units=None, fig=None
 
     if('axis' in params and params['axis']=='equal'):
         fig_ax[1].set_aspect('equal', adjustable='box') # fig_ax[1].axis('equal')
+    else:
+        # ax.cla() does not reset a previously set aspect ratio, so a reused
+        # Axes (e.g. in gpt_plot_gui) would stay 'equal' forever without this
+        fig_ax[1].set_aspect('auto')
         
     if ('xlim' in params):
         fig_ax[1].set_xlim(params['xlim'])
@@ -549,9 +540,10 @@ def gpt_plot_dist2d(pmd, var1, var2, plot_type='histogram', units=None, fig=None
     show_emit = False
     if ((var1 == 'x' and 'px' in var2 ) or (var1 == 'y' and 'py' in var2)):
         show_emit = True
-        factor = c_light**2 /e_charge # kg -> eV
-        particle_mass = 9.10938356e-31  # kg
-        emitxy = (x_scale*y_scale/factor/particle_mass)*np.sqrt(stdx**2 * stdy**2 - corxy**2)
+        # pmd.mass is the species rest energy in eV; for an electron this is
+        # numerically identical to the old (c_light**2/e_charge)/m_e form, but
+        # now correct for any species GPT tracks.
+        emitxy = (x_scale*y_scale/pmd.mass)*np.sqrt(stdx**2 * stdy**2 - corxy**2)
         (emitxy, emitxy_units, emitxy_scale) = scale_and_get_units(emitxy, pmd.units(var1).unitSymbol)
     
     if(table_on):
@@ -594,6 +586,7 @@ def gpt_plot_dist2d(pmd, var1, var2, plot_type='histogram', units=None, fig=None
 
 
 def gpt_plot_trajectory(gpt_data_input, var1, var2, fig_ax=None, format_input_data=True, nlines=None, show_survivors_at_z=None, **params):
+    warn_unrecognized_params(params, GPT_PLOT_TRAJECTORY_PARAMS, 'gpt_plot_trajectory')
     if (format_input_data):
         gpt_data = convert_gpt_data(gpt_data_input)
     else:

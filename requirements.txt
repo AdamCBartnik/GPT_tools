@@ -1,0 +1,18 @@
+numpy
+scipy
+matplotlib
+pandas
+ipywidgets
+pyyaml
+pint
+sympy
+psutil
+mpmath
+fastnumbers
+distgen
+xopt
+lume-gpt
+# openpmd-beamphysics provides the ParticleGroup class. The code imports it as
+# `beamphysics`, which is the current name; the old `pmd_beamphysics` import
+# name is now deprecated. The distribution is named `openpmd-beamphysics`.
+openpmd-beamphysics

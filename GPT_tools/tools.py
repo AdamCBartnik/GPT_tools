@@ -1,10 +1,25 @@
 import copy
 import numpy as np
 import matplotlib as mpl
-from .nicer_units import *
+from .nicer_units import nicer_array, SHORT_PREFIX_FACTOR
 from .ParticleGroupExtension import ParticleGroupExtension
 from scipy.stats import binned_statistic_2d
 import matplotlib.pyplot as plt
+
+# Parameter names accepted through **params by the plotting functions.
+# get_screen_data and postprocess_screen read these; anything else passed
+# through **params is silently ignored, so the plotting functions warn about
+# unrecognized names to catch typos.
+SCREEN_SELECT_PARAMS = {'screen_key', 'screen_value', 'screen_z', 'screen_t', 'tout_z', 'tout_t', 'verbose', 'use_extension'}
+POSTPROCESS_PARAMS = {'need_copy', 'kill_zero_weight', 'include_ids', 'take_range', 'take_slice',
+                      'clip_to_charge', 'clip_to_emit', 'cylindrical_copies', 'remove_spinning',
+                      'remove_correlation', 'random_N', 'first_N'}
+
+def warn_unrecognized_params(params, allowed, function_name):
+    unrecognized = [k for k in params if k not in allowed]
+    if (len(unrecognized) > 0):
+        print(f"{function_name}: unrecognized parameter(s): {', '.join(unrecognized)} (check for typos, they are being ignored)")
+
 
 def make_default_plot(plot_width=700, plot_height=400, dpi = 120, is_table=False, **params):
     
@@ -238,8 +253,20 @@ def get_screen_data(gpt_data, verbose=False, use_extension=True, **params):
 def scale_and_get_units(x, x_base_units):
     x, x_scale, x_prefix = nicer_array(x)
     x_unit_str = check_mu(x_prefix)+x_base_units
-    
+
     return (x, x_unit_str, x_scale)
+
+
+def apply_user_units(data, units_str, scale, user_units, base_units):
+    # data*scale is in base_units; rescale so data is displayed in the
+    # SI-prefixed user_units (e.g. 'mm', 'ns'). Returns (data, units_str, scale),
+    # unchanged if user_units does not end in base_units.
+    if (user_units.endswith(base_units)):
+        new_scale = SHORT_PREFIX_FACTOR[user_units[:-len(base_units)]]
+        return (data * scale / new_scale, user_units, new_scale)
+    else:
+        print('Incorrect units specified')
+        return (data, units_str, scale)
     
 
     
@@ -321,7 +348,7 @@ def add_row(data, **params):
 
 
 
-def scatter_color(fig, ax, pmd, x, y, weights=None, color_var='density', bins=100, colormap=mpl.cm.get_cmap('jet'), is_radial_var=[False, False], zlim=None):
+def scatter_color(fig, ax, pmd, x, y, weights=None, color_var='density', bins=100, colormap=mpl.colormaps['jet'], is_radial_var=[False, False], zlim=None):
     
     force_zero = False
     use_separate_data = False
@@ -376,7 +403,7 @@ def scatter_color(fig, ax, pmd, x, y, weights=None, color_var='density', bins=10
         
         
         
-def hist2d(fig, ax, pmd, x, y, weights, color_var='density', bins=[100,100], colormap=mpl.cm.get_cmap('jet'), is_radial_var=[False,False], zlim=None):
+def hist2d(fig, ax, pmd, x, y, weights, color_var='density', bins=[100,100], colormap=mpl.colormaps['jet'], is_radial_var=[False,False], zlim=None):
     force_zero = False
     use_separate_data = False
             

@@ -221,10 +221,12 @@ def take_range(screen_input, take_range_var, range_min, range_max, make_copy=Fal
         x = x - sum(x*screen.weight)/sum(screen.weight)
     
     out_of_range = np.logical_or(x < range_min, x > range_max)
-    
+
     if (np.count_nonzero(out_of_range) < len(out_of_range)):
         screen.weight[out_of_range] = 0.0
-    
+    else:
+        print(f'take_range: no particles with {take_range_var} in [{range_min:G}, {range_max:G}], range not applied')
+
     return kill_zero_weight(screen, make_copy=False)
 
     
@@ -253,7 +255,7 @@ def remove_correlation(screen_input, var1, var2, max_power, make_copy=False):
     w = screen.weight
     w_sum = np.sum(w)
     x_mean = np.sum(x*w)/w_sum
-    y_mean = np.sum(x*w)/w_sum
+    y_mean = np.sum(y*w)/w_sum
     
     c = poly.polyfit(x-x_mean, y-y_mean, max_power, w=w)
     y_fit = poly.polyval(x-x_mean, c)+y_mean

@@ -1,9 +1,40 @@
 import numpy as np
-from .gpt_plot import *
-from .tools import special_screens
+from .gpt_plot import gpt_plot, gpt_plot_dist1d, gpt_plot_dist2d
+from .tools import special_screens, make_default_plot, get_screen_data
 from .ParticleGroupExtension import convert_gpt_data
 import ipywidgets as widgets
 import matplotlib.pyplot as plt
+
+def parse_limits(text):
+    # 'min, max' -> (min, max); blank or unparseable -> None (automatic)
+    try:
+        parts = [float(p) for p in text.replace(',', ' ').split()]
+    except ValueError:
+        return None
+    if (len(parts) == 2):
+        return (parts[0], parts[1])
+    return None
+
+
+def add_limit_params(params, xlim_text, ylim_text, clim_text=None):
+    for (key, limit_text) in (('xlim', xlim_text), ('ylim', ylim_text), ('clim', clim_text)):
+        if (limit_text is not None):
+            limits = parse_limits(limit_text.value)
+            if (limits is not None):
+                params[key] = limits
+
+
+class RawExpression:
+    # repr() returns the expression unquoted, for building command strings
+    def __init__(self, expression):
+        self.expression = expression
+    def __repr__(self):
+        return self.expression
+
+
+def format_call_params(params):
+    return ''.join([f', {k}={v!r}' for (k, v) in params.items()])
+
 
 def gpt_plot_gui(gpt_data_input):
     gpt_data = convert_gpt_data(gpt_data_input)
@@ -30,15 +61,17 @@ def gpt_plot_gui(gpt_data_input):
     dist_list = ['t','x','y','z','r_centered','px','py','pz','pr_centered','ptrans','action_x','action_y','action_4d','kinetic_energy']
     
     plottype_list = ['Trends', '1D Distribution', '2D Distribution']
-    plottype_dropdown = widgets.Dropdown(options=[(a, i) for (i,a) in enumerate(plottype_list)], value=0)
+    # 304px = two 150px widgets plus the 4px inter-widget margin, so the right
+    # edge lines up with the two-dropdown rows below
+    plottype_dropdown = widgets.Dropdown(options=[(a, i) for (i,a) in enumerate(plottype_list)], value=0, layout=widgets.Layout(width='304px', height='30px'))
     
     screen_type_list = ['Special', 'All']
     if (len(special_z_list) == 0):
         screen_type_dropdown = widgets.Dropdown(options=[(a, i) for (i,a) in enumerate(screen_type_list)], value=1, layout=layout_150px)
-        screen_z_dropdown = widgets.Dropdown(options=[(f'{z:.3f}', i) for (i,z) in enumerate(screen_z_list)], layout=layout_150px)
+        screen_z_dropdown = widgets.Dropdown(options=[(f'{z:.6f}', i) for (i,z) in enumerate(screen_z_list)], layout=layout_150px)
     else:
         screen_type_dropdown = widgets.Dropdown(options=[(a, i) for (i,a) in enumerate(screen_type_list)], value=0, layout=layout_150px)
-        screen_z_dropdown = widgets.Dropdown(options=[(f'{z:.3f}', i) for (i,z) in enumerate(special_z_list)], layout=layout_150px)
+        screen_z_dropdown = widgets.Dropdown(options=[(f'{z:.6f}', i) for (i,z) in enumerate(special_z_list)], layout=layout_150px)
     
     trend_x_list = ['z', 't']
     trend_y_list = ['Beam Size', 'Bunch Length', 'Emittance (x,y)', 'Emittance (4D)', 'Slice emit. (x,y)', 'Slice emit. (4D)', 'Charge', 'Kinetic Energy', 'Energy Spread', 'Trajectory', 'MTE']
@@ -47,7 +80,7 @@ def gpt_plot_gui(gpt_data_input):
     trend_slice_var_dropdown = widgets.Dropdown(options=[(a, i) for (i,a) in enumerate(dist_list)], value=0, layout=layout_150px)
     trend_slice_nslices_text = widgets.BoundedIntText(value=50, min=5, max=500, step=1, layout=layout_150px)
     trend_survivors_checkbox = widgets.Checkbox(value=False,description='Enabled',disabled=False,indent=False, layout=layout_100px)
-    trend_survivors_screen_z_dropdown = widgets.Dropdown(options=[(f'{z:.3f}', i) for (i,z) in enumerate(screen_z_list)], layout=layout_100px)
+    trend_survivors_screen_z_dropdown = widgets.Dropdown(options=[(f'{z:.6f}', i) for (i,z) in enumerate(screen_z_list)], layout=layout_100px)
     
     dist_x_1d_dropdown = widgets.Dropdown(options=[(a, i) for (i,a) in enumerate(dist_list)], value=0, layout=layout_150px)
     dist_type_1d_list = ['Charge Density', 'Emittance X', 'Emittance Y', 'Emittance 4D', 'Sigma X', 'Sigma Y', 'Sigma E']
@@ -55,17 +88,17 @@ def gpt_plot_gui(gpt_data_input):
     nbin_1d_text = widgets.BoundedIntText(value=50, min=5, max=500, step=1, layout=layout_150px)
     
     dist2d_type_dropdown = widgets.Dropdown(options=[('Scatter', 'scatter'), ('Histogram', 'histogram')], value='histogram', layout=layout_150px)
-    scatter_color = ['density'] + dist_list
-    dist2d_color_dropdown = widgets.Dropdown(options=[(a, i) for (i,a) in enumerate(scatter_color)], value=0, layout=layout_150px)
+    dist2d_color_list = ['density'] + dist_list
+    dist2d_color_dropdown = widgets.Dropdown(options=[(a, i) for (i,a) in enumerate(dist2d_color_list)], value=0, layout=layout_150px)
     dist2d_color_source_dropdown = widgets.Dropdown(options=[('Same screen', 'same'), ('Alternate screen', 'alt')], value='same', layout=layout_150px)
     dist2d_color_screen_type_dropdown = widgets.Dropdown(options=[(a, i) for (i,a) in enumerate(screen_type_list)], value=0, layout=layout_150px)
-    dist2d_color_screen_z_dropdown = widgets.Dropdown(options=[(f'{z:.3f}', i) for (i,z) in enumerate(special_z_list)], layout=layout_100px)
+    dist2d_color_screen_z_dropdown = widgets.Dropdown(options=[(f'{z:.6f}', i) for (i,z) in enumerate(special_z_list)], layout=layout_100px)
     
     dist_x_dropdown = widgets.Dropdown(options=[(a, i) for (i,a) in enumerate(dist_list)], value=1, layout=layout_150px)
     dist_y_dropdown = widgets.Dropdown(options=[(a, i) for (i,a) in enumerate(dist_list)], value=2, layout=layout_150px)
     dist_y_source_dropdown = widgets.Dropdown(options=[('Same screen', 'same'), ('Alternate screen', 'alt')], value='same', layout=layout_150px)
     dist_y_screen_type_dropdown = widgets.Dropdown(options=[(a, i) for (i,a) in enumerate(screen_type_list)], value=0, layout=layout_150px)
-    dist_y_screen_z_dropdown = widgets.Dropdown(options=[(f'{z:.3f}', i) for (i,z) in enumerate(special_z_list)], layout=layout_100px)
+    dist_y_screen_z_dropdown = widgets.Dropdown(options=[(f'{z:.6f}', i) for (i,z) in enumerate(special_z_list)], layout=layout_100px)
     
     axis_equal_checkbox = widgets.Checkbox(value=False,description='Enabled',disabled=False,indent=False, layout=layout_100px)
     nbin_x_text = widgets.BoundedIntText(value=50, min=5, max=500, step=1, layout=layout_150px)
@@ -99,7 +132,19 @@ def gpt_plot_gui(gpt_data_input):
     log_checkbox = widgets.Checkbox(value=False,description='Enabled',disabled=False,indent=False, layout=layout_100px)
     cursor_checkbox = widgets.Checkbox(value=True,description='Enabled',disabled=False,indent=False, layout=layout_100px)
 
-    def make_plot():   
+    # Axis limit overrides, entered as 'min, max'; blank = automatic
+    trend_xlim_text = widgets.Text(value='', placeholder='auto', continuous_update=False, layout=layout_150px)
+    trend_ylim_text = widgets.Text(value='', placeholder='auto', continuous_update=False, layout=layout_150px)
+    dist1d_xlim_text = widgets.Text(value='', placeholder='auto', continuous_update=False, layout=layout_150px)
+    dist1d_ylim_text = widgets.Text(value='', placeholder='auto', continuous_update=False, layout=layout_150px)
+    dist2d_xlim_text = widgets.Text(value='', placeholder='auto', continuous_update=False, layout=layout_150px)
+    dist2d_ylim_text = widgets.Text(value='', placeholder='auto', continuous_update=False, layout=layout_150px)
+    dist2d_clim_text = widgets.Text(value='', placeholder='auto', continuous_update=False, layout=layout_150px)
+
+    # Shows the plotting command equivalent to the current GUI state
+    command_text = widgets.Textarea(value='', layout=widgets.Layout(width='calc(100% - 4px)', height='80px'))
+
+    def make_plot():
         # Clear plot window
         nonlocal colorbar_instance
         if (colorbar_instance is not None):
@@ -107,6 +152,7 @@ def gpt_plot_gui(gpt_data_input):
             colorbar_instance = None
         
         gui_ax.cla()
+        gui_ax.set_aspect('auto')  # cla() does not reset aspect; dist2d re-applies 'equal' if requested
         
         for old_plot in gui.children[3:]:
             old_plot.close()
@@ -198,14 +244,22 @@ def gpt_plot_gui(gpt_data_input):
         axis_equal_checkbox.disabled = not is_dist2d
         nbin_x_text.disabled = not is_dist2d
         nbin_y_text.disabled = not is_dist2d
-        
+
+        trend_xlim_text.disabled = not is_trend
+        trend_ylim_text.disabled = not is_trend
+        dist1d_xlim_text.disabled = not is_dist1d
+        dist1d_ylim_text.disabled = not is_dist1d
+        dist2d_xlim_text.disabled = not is_dist2d
+        dist2d_ylim_text.disabled = not is_dist2d
+        dist2d_clim_text.disabled = not is_dist2d
+
         # Add extra parameters to pass into plotting functions
         params = {}
-#        if (not is_trend):
-        if (screen_type_dropdown.label.lower() == 'all'):
-            params['screen_z'] = screen_z_list[screen_z_dropdown.value]
-        if (screen_type_dropdown.label.lower() == 'special'):
-            params['screen_z'] = special_z_list[screen_z_dropdown.value]
+        if (not is_trend):
+            if (screen_type_dropdown.label.lower() == 'all'):
+                params['screen_z'] = screen_z_list[screen_z_dropdown.value]
+            if (screen_type_dropdown.label.lower() == 'special'):
+                params['screen_z'] = special_z_list[screen_z_dropdown.value]
         if (remove_zero_weight):
             params['kill_zero_weight'] = remove_zero_weight
         if (cyl_copies_on):
@@ -227,7 +281,12 @@ def gpt_plot_gui(gpt_data_input):
             if (is_slice_trend):
                 params['slice_key'] = trend_slice_var
                 params['n_slices'] = trend_slice_nslices
-        
+            add_limit_params(params, trend_xlim_text, trend_ylim_text)
+        if (is_dist1d):
+            add_limit_params(params, dist1d_xlim_text, dist1d_ylim_text)
+        if (is_dist2d):
+            add_limit_params(params, dist2d_xlim_text, dist2d_ylim_text, dist2d_clim_text)
+
         # Make the plot, assign to (only) child of figure_hbox
         if (is_trend):
             if (tab_panel.selected_index < 3):
@@ -235,32 +294,47 @@ def gpt_plot_gui(gpt_data_input):
             var1 = 'mean_'+trend_x
             var2 = get_trend_vars(trend_y)
             gpt_plot(gpt_data, var1, var2, fig_ax=(gui_fig, gui_ax), **params)
+            cmd_params = {k: v for (k, v) in params.items() if not (k == 'show_survivors_at_z' and v is None)}
+            command_text.value = f'gpt_plot(gpt_data, {var1!r}, {var2!r}{format_call_params(cmd_params)})'
         if (is_dist1d):
             if (tab_panel.selected_index < 3):
                 tab_panel.selected_index = 1
             ptype_1d = get_dist_plot_type(dist_y_1d)
             table_widget = gpt_plot_dist1d(gpt_data, dist_x_1d, plot_type=ptype_1d, nbins=nbins_1d, fig_ax=(gui_fig, gui_ax), **params)
             gui.children += (table_widget, )
+            command_text.value = f'gpt_plot_dist1d(gpt_data, {dist_x_1d!r}, plot_type={ptype_1d!r}, nbins={nbins_1d}{format_call_params(params)})'
         if (is_dist2d):
             if (tab_panel.selected_index < 3):
                 tab_panel.selected_index = 2
             if (dist_y_alt_source):
                 if (dist_y_screen_type_dropdown.label.lower() == 'all'):
-                    dist_y = (dist_y, get_screen_data(gpt_data, screen_z=screen_z_list[dist_y_screen_z_dropdown.value])[0])
+                    dist_y_z = screen_z_list[dist_y_screen_z_dropdown.value]
                 if (dist_y_screen_type_dropdown.label.lower() == 'special'):
-                    dist_y = (dist_y, get_screen_data(gpt_data, screen_z=special_z_list[dist_y_screen_z_dropdown.value])[0])
+                    dist_y_z = special_z_list[dist_y_screen_z_dropdown.value]
+                var2_repr = f'({dist_y!r}, get_screen_data(gpt_data, screen_z={dist_y_z})[0])'
+                dist_y = (dist_y, get_screen_data(gpt_data, screen_z=dist_y_z)[0])
+            else:
+                var2_repr = repr(dist_y)
             if (dist2d_color_alt_source):
                 if (dist2d_color_screen_type_dropdown.label.lower() == 'all'):
-                    params['color_var'] = (dist2d_color_var, get_screen_data(gpt_data, screen_z=screen_z_list[dist2d_color_screen_z_dropdown.value])[0])
+                    color_z = screen_z_list[dist2d_color_screen_z_dropdown.value]
                 if (dist2d_color_screen_type_dropdown.label.lower() == 'special'):
-                    params['color_var'] = (dist2d_color_var, get_screen_data(gpt_data, screen_z=special_z_list[dist2d_color_screen_z_dropdown.value])[0])
+                    color_z = special_z_list[dist2d_color_screen_z_dropdown.value]
+                params['color_var'] = (dist2d_color_var, get_screen_data(gpt_data, screen_z=color_z)[0])
             else:
                 params['color_var'] = dist2d_color_var
             if (axis_equal):
                 params['axis'] = 'equal'
             (table_widget, colorbar_instance) = gpt_plot_dist2d(gpt_data, dist_x, dist_y, plot_type=ptype, nbins=nbins, fig_ax=(gui_fig, gui_ax), **params)
             gui.children += (table_widget, )
-        display(gui)    
+            cmd_params = dict(params)
+            if (dist2d_color_alt_source):
+                cmd_params['color_var'] = RawExpression(f'({dist2d_color_var!r}, get_screen_data(gpt_data, screen_z={color_z})[0])')
+            command_text.value = f'gpt_plot_dist2d(gpt_data, {dist_x!r}, {var2_repr}, plot_type={ptype!r}, nbins={nbins!r}{format_call_params(cmd_params)})'
+        # The GUI updates in place (gui_ax.cla / reassigning gui.children); it
+        # is displayed once via the object returned by gpt_plot_gui(). Calling
+        # display(gui) on every callback caused duplicate/raced renders,
+        # especially under ipykernel 7 subshells.
             
     # Callback functions
     def remake_on_value_change(change):
@@ -296,13 +370,17 @@ def gpt_plot_gui(gpt_data_input):
         widgets.HBox([widgets.Label('Only show survivors', layout=label_layout), trend_survivors_checkbox]),
         widgets.HBox([widgets.Label('Survivor screen', layout=label_layout), trend_survivors_screen_z_dropdown]),
         widgets.HBox([widgets.Label('Log scale', layout=label_layout), log_checkbox]),
-        widgets.HBox([widgets.Label('Show cursor', layout=label_layout), cursor_checkbox])
+        widgets.HBox([widgets.Label('Show cursor', layout=label_layout), cursor_checkbox]),
+        widgets.HBox([widgets.Label('X limits (min, max)', layout=label_layout), trend_xlim_text]),
+        widgets.HBox([widgets.Label('Y limits (min, max)', layout=label_layout), trend_ylim_text])
     ])
     
     dist_1d_tab = widgets.VBox([
         widgets.HBox([widgets.Label('X axis', layout=label_layout), dist_x_1d_dropdown]), 
         widgets.HBox([widgets.Label('Y axis', layout=label_layout), dist_type_1d_dropdown]),
-        widgets.HBox([widgets.Label('Histogram bins', layout=label_layout), nbin_1d_text])
+        widgets.HBox([widgets.Label('Histogram bins', layout=label_layout), nbin_1d_text]),
+        widgets.HBox([widgets.Label('X limits (min, max)', layout=label_layout), dist1d_xlim_text]),
+        widgets.HBox([widgets.Label('Y limits (min, max)', layout=label_layout), dist1d_ylim_text])
     ])
 
     dist_2d_tab = widgets.VBox([
@@ -316,7 +394,10 @@ def gpt_plot_gui(gpt_data_input):
         widgets.HBox([widgets.Label('Y screen type', layout=label_layout), dist_y_screen_type_dropdown, dist_y_screen_z_dropdown]),
         widgets.HBox([widgets.Label('Equal scale axes', layout=label_layout), axis_equal_checkbox]),
         widgets.HBox([widgets.Label('Histogram bins, X', layout=label_layout), nbin_x_text]),
-        widgets.HBox([widgets.Label('Histogram bins, Y', layout=label_layout), nbin_y_text])
+        widgets.HBox([widgets.Label('Histogram bins, Y', layout=label_layout), nbin_y_text]),
+        widgets.HBox([widgets.Label('X limits (min, max)', layout=label_layout), dist2d_xlim_text]),
+        widgets.HBox([widgets.Label('Y limits (min, max)', layout=label_layout), dist2d_ylim_text]),
+        widgets.HBox([widgets.Label('Color limits (min, max)', layout=label_layout), dist2d_clim_text])
     ])
     
     postprocess_tab = widgets.VBox([
@@ -354,13 +435,16 @@ def gpt_plot_gui(gpt_data_input):
     tools_panel = widgets.VBox([
         widgets.HBox([widgets.Label('Plot Type', layout=label_layout), plottype_dropdown]),
         widgets.HBox([widgets.Label('Screen type', layout=label_layout), screen_type_dropdown, screen_z_dropdown]),
-        tab_panel
+        tab_panel,
+        widgets.Label('Equivalent command:'),
+        command_text
     ])
 
-    # Place controls panel to the left of the plot
+    # Place controls panel to the left of the plot. The plot box sizes itself
+    # to the canvas so the parameter table stays tight against the plot
     gui.children += (tools_panel, )
     gui.children += (widgets.HBox([], layout=layout_20px), )
-    gui.children += (HBox([gui_fig.canvas], layout=widgets.Layout(width='800px')), )  
+    gui.children += (widgets.HBox([gui_fig.canvas], layout=widgets.Layout(width='auto')), )
         
     # Force the plot redraw function to be called once at start
     make_plot()
@@ -411,8 +495,15 @@ def gpt_plot_gui(gpt_data_input):
     clip_charge_text.observe(remake_on_value_change, names='value')
     log_checkbox.observe(remake_on_value_change, names='value')
     cursor_checkbox.observe(remake_on_value_change, names='value')
-        
-    #return gui
+    trend_xlim_text.observe(remake_on_value_change, names='value')
+    trend_ylim_text.observe(remake_on_value_change, names='value')
+    dist1d_xlim_text.observe(remake_on_value_change, names='value')
+    dist1d_ylim_text.observe(remake_on_value_change, names='value')
+    dist2d_xlim_text.observe(remake_on_value_change, names='value')
+    dist2d_ylim_text.observe(remake_on_value_change, names='value')
+    dist2d_clim_text.observe(remake_on_value_change, names='value')
+
+    return gui
 
 
 
