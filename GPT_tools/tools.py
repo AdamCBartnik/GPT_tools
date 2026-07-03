@@ -6,6 +6,21 @@ from .ParticleGroupExtension import ParticleGroupExtension
 from scipy.stats import binned_statistic_2d
 import matplotlib.pyplot as plt
 
+# Parameter names accepted through **params by the plotting functions.
+# get_screen_data and postprocess_screen read these; anything else passed
+# through **params is silently ignored, so the plotting functions warn about
+# unrecognized names to catch typos.
+SCREEN_SELECT_PARAMS = {'screen_key', 'screen_value', 'screen_z', 'screen_t', 'tout_z', 'tout_t', 'verbose', 'use_extension'}
+POSTPROCESS_PARAMS = {'need_copy', 'kill_zero_weight', 'include_ids', 'take_range', 'take_slice',
+                      'clip_to_charge', 'clip_to_emit', 'cylindrical_copies', 'remove_spinning',
+                      'remove_correlation', 'random_N', 'first_N'}
+
+def warn_unrecognized_params(params, allowed, function_name):
+    unrecognized = [k for k in params if k not in allowed]
+    if (len(unrecognized) > 0):
+        print(f"{function_name}: unrecognized parameter(s): {', '.join(unrecognized)} (check for typos, they are being ignored)")
+
+
 def make_default_plot(plot_width=700, plot_height=400, dpi = 120, is_table=False, **params):
     
     plot_layout = 'constrained'  # constrained, tight

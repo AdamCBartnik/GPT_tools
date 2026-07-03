@@ -11,6 +11,13 @@ from GPT_tools.SnappingCursor import SnappingCursor
 import pandas as pd
 import random
 
+# Parameters each plotting function accepts through **params (see tools.py)
+GPT_PLOT_PARAMS = POSTPROCESS_PARAMS | {'color', 'xlim', 'ylim', 'log_scale', 'slice_key', 'n_slices', 'dpi'}
+GPT_PLOT_DIST1D_PARAMS = SCREEN_SELECT_PARAMS | POSTPROCESS_PARAMS | {'nbins', 'color', 'xlim', 'ylim', 'dpi'}
+GPT_PLOT_DIST2D_PARAMS = SCREEN_SELECT_PARAMS | POSTPROCESS_PARAMS | {'nbins', 'colormap', 'zlim', 'clim', 'axis',
+                                                                      'color_var', 'centered_at_zero', 'xlim', 'ylim', 'dpi'}
+GPT_PLOT_TRAJECTORY_PARAMS = POSTPROCESS_PARAMS | {'xlim', 'ylim', 'dpi'}
+
 def make_dataframe_widget(df):
     out = widgets.Output()
     with out:
@@ -19,6 +26,7 @@ def make_dataframe_widget(df):
 
 def gpt_plot(gpt_data_input, var1, var2, units=None, fig_ax=None, format_input_data=True, show_survivors_at_z=None, show_survivors_after_z=None, 
              show_screens=True, show_cursor=True, return_data=False, legend=True, **params):
+    warn_unrecognized_params(params, GPT_PLOT_PARAMS, 'gpt_plot')
     if (format_input_data):
         gpt_data = convert_gpt_data(gpt_data_input)
     else:
@@ -211,6 +219,7 @@ def gpt_plot(gpt_data_input, var1, var2, units=None, fig_ax=None, format_input_d
 
 
 def gpt_plot_dist1d(pmd, var, plot_type='charge', units=None, fig_ax=None, table_fig=None, table_on=True, subtract_mean='auto', **params):
+    warn_unrecognized_params(params, GPT_PLOT_DIST1D_PARAMS, 'gpt_plot_dist1d')
     screen_key = None
     screen_value = None
     if (isinstance(pmd, GPT)):
@@ -381,6 +390,7 @@ def gpt_plot_dist1d(pmd, var, plot_type='charge', units=None, fig_ax=None, table
     
 def gpt_plot_dist2d(pmd, var1, var2, plot_type='histogram', units=None, table_fig=None, table_on=True, plot_width=600, plot_height=400,
                     return_data=False, x_subtract_mean='auto', y_subtract_mean='auto', fig_ax=None, **params):
+    warn_unrecognized_params(params, GPT_PLOT_DIST2D_PARAMS, 'gpt_plot_dist2d')
 
     if (fig_ax==None):
         show_plot = True
@@ -607,6 +617,7 @@ def gpt_plot_dist2d(pmd, var1, var2, plot_type='histogram', units=None, table_fi
 
 
 def gpt_plot_trajectory(gpt_data_input, var1, var2, fig_ax=None, format_input_data=True, nlines=None, show_survivors_at_z=None, **params):
+    warn_unrecognized_params(params, GPT_PLOT_TRAJECTORY_PARAMS, 'gpt_plot_trajectory')
     if (format_input_data):
         gpt_data = convert_gpt_data(gpt_data_input)
     else:
