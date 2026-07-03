@@ -2,7 +2,6 @@ import copy
 import numpy as np
 from scipy.special import spence
 from mpmath import polylog
-from distgen import Generator
 from GPT_tools.GPTExtension import get_cathode_particlegroup
 from pint import UnitRegistry
 
@@ -80,7 +79,7 @@ def MakeSemiconductorParticleGroup(settings, DISTGEN_INPUT_FILE=None, verbose=Tr
             fudge_factor = np.min([3, settings['n_particle'] / (np.count_nonzero(PG.pz>=pz_min) + 1)])
             settings_copy['n_particle'] = np.ceil(settings_copy['n_particle']*fudge_factor)
             if (verbose):
-                print(f'Creating {settings_copy["n_particle"]} particles to try to truncate to {settings['n_particle']}.')
+                print(f'Creating {settings_copy["n_particle"]} particles to try to truncate to {settings["n_particle"]}.')
             PG = MakeSemiconductorEnergyDist(get_cathode_particlegroup(settings_copy, DISTGEN_INPUT_FILE=DISTGEN_INPUT_FILE), EexcAtSurface, EaSurf) 
         PG = PG[PG.pz>=pz_min]
         which_particles_to_keep = np.random.default_rng().choice(np.arange(0,len(PG)), size=settings['n_particle'], replace=False)
@@ -287,9 +286,10 @@ def PeakPotentialz(E0, z0, r0):
     # return 0.5*np.sqrt(E1/E0) - z0  # this is for r0 = 0, in case my crazy formula above doesn't work in some fringe case
 
 
-def MakeSemiconductorEnergyDist(pg, EexcAtSurface, EaSurf):   
-    # Make energy distribution for the constant DoS model
+def MakeSemiconductorEnergyDist(pg, EexcAtSurface, EaSurf):
+    # Make energy distribution for the parabolic density of states (with energy gap) model
     #    EexcAtSurface: Excess energy at cathode surface, eV
+    #    EaSurf: Electron affinity plus the image potential at the surface, eV
     
     pnorm = 1010.93912  # sqrt(2* (electron mass) * (1 eV)) in eV/c
     Ekin = invEcumulSemi(np.random.rand(len(pg)), EexcAtSurface, EaSurf)
@@ -311,8 +311,7 @@ def MakeMetalEnergyDist(pg, EexcAtSurface, kT):
     # Make energy distribution for the constant DoS model
     #    EexcAtSurface: Excess energy at cathode surface, eV
     #    kT: eV
-    #    pz_min: 
-    
+
     pnorm = 1010.93912  # sqrt(2* (electron mass) * (1 eV)) in eV/c
     Ekin = invEcumul(np.random.rand(len(pg)), EexcAtSurface, kT)
     (pr, pz) = uniform_pr2_dist(len(pg))
@@ -369,7 +368,7 @@ def inv_QE_model(QE, Eexcz, kT, QEtol = 1.0e-9):
 
     while (np.any(needs_work)):
         guess[needs_work] = guess[needs_work] - (fguess[needs_work] - QE[needs_work])/dE_QE_model(Eexcz[needs_work], kT, guess[needs_work])
-        fguess[needs_work] = np.array(QE_model(Eexcz, kT, guess))
+        fguess[needs_work] = QE_model(Eexcz[needs_work], kT, guess[needs_work])
         needs_work = np.array(np.abs(fguess - QE) > QEtol)
 
     return guess
