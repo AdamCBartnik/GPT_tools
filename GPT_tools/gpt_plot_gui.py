@@ -1,6 +1,6 @@
 import numpy as np
-from .gpt_plot import *
-from .tools import special_screens
+from .gpt_plot import gpt_plot, gpt_plot_dist1d, gpt_plot_dist2d
+from .tools import special_screens, make_default_plot, get_screen_data
 from .ParticleGroupExtension import convert_gpt_data
 import ipywidgets as widgets
 import matplotlib.pyplot as plt
@@ -364,7 +364,7 @@ def gpt_plot_gui(gpt_data_input):
     # Place controls panel to the left of the plot
     gui.children += (tools_panel, )
     gui.children += (widgets.HBox([], layout=layout_20px), )
-    gui.children += (HBox([gui_fig.canvas], layout=widgets.Layout(width='800px')), )  
+    gui.children += (widgets.HBox([gui_fig.canvas], layout=widgets.Layout(width='800px')), )  
         
     # Force the plot redraw function to be called once at start
     make_plot()

@@ -1,7 +1,7 @@
 import copy
 import numpy as np
 import matplotlib as mpl
-from .nicer_units import *
+from .nicer_units import nicer_array
 from .ParticleGroupExtension import ParticleGroupExtension
 from scipy.stats import binned_statistic_2d
 import matplotlib.pyplot as plt
