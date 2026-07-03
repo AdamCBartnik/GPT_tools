@@ -532,6 +532,10 @@ def gpt_plot_dist2d(pmd, var1, var2, plot_type='histogram', units=None, table_fi
 
     if('axis' in params and params['axis']=='equal'):
         fig_ax[1].set_aspect('equal', adjustable='box') # fig_ax[1].axis('equal')
+    else:
+        # ax.cla() does not reset a previously set aspect ratio, so a reused
+        # Axes (e.g. in gpt_plot_gui) would stay 'equal' forever without this
+        fig_ax[1].set_aspect('auto')
         
     if ('xlim' in params):
         fig_ax[1].set_xlim(params['xlim'])
