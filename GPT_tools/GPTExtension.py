@@ -14,7 +14,6 @@ from pint import UnitRegistry
 import matplotlib.pyplot as plt
 import concurrent.futures
 from functools import partial
-from .image_charge import get_blank_particlegroup
 from sympy import divisors
 from .THz_functions import THz_lump_element
 
@@ -1675,3 +1674,17 @@ def get_distgen_beam_for_phasing_from_particlegroup(PG, n_particle=10, verbose=F
         PG = gen.particles
         return PG
 
+
+def get_blank_particlegroup(n_particle, verbose=False):
+    # Returns an uninitialized particlegroup of size N. Distgen seems to suck at this for small N
+    
+    variables = ['x', 'y', 'z', 'px', 'py', 'pz', 't']
+    phasing_distgen_input = {'n_particle':n_particle, 'random':{'type':'hammersley'}, 'total_charge':{'value':1.0, 'units':'pC'}, 'species':'electron', 'start': {'type':'time', 'tstart':{'value': 0.0, 'units': 's'}},}
+    gen = Generator(phasing_distgen_input, verbose=verbose) 
+    gen.run()
+    PG = gen.particles
+    
+    PG._settable_array_keys.append("id")
+    PG.id = np.arange(1, n_particle+1)
+    
+    return PG
