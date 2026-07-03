@@ -1,7 +1,7 @@
 import copy
 import numpy as np
 import matplotlib as mpl
-from .nicer_units import nicer_array
+from .nicer_units import nicer_array, SHORT_PREFIX_FACTOR
 from .ParticleGroupExtension import ParticleGroupExtension
 from scipy.stats import binned_statistic_2d
 import matplotlib.pyplot as plt
@@ -253,8 +253,20 @@ def get_screen_data(gpt_data, verbose=False, use_extension=True, **params):
 def scale_and_get_units(x, x_base_units):
     x, x_scale, x_prefix = nicer_array(x)
     x_unit_str = check_mu(x_prefix)+x_base_units
-    
+
     return (x, x_unit_str, x_scale)
+
+
+def apply_user_units(data, units_str, scale, user_units, base_units):
+    # data*scale is in base_units; rescale so data is displayed in the
+    # SI-prefixed user_units (e.g. 'mm', 'ns'). Returns (data, units_str, scale),
+    # unchanged if user_units does not end in base_units.
+    if (user_units.endswith(base_units)):
+        new_scale = SHORT_PREFIX_FACTOR[user_units[:-len(base_units)]]
+        return (data * scale / new_scale, user_units, new_scale)
+    else:
+        print('Incorrect units specified')
+        return (data, units_str, scale)
     
 
     
