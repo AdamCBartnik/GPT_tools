@@ -61,7 +61,9 @@ def gpt_plot_gui(gpt_data_input):
     dist_list = ['t','x','y','z','r_centered','px','py','pz','pr_centered','ptrans','action_x','action_y','action_4d','kinetic_energy']
     
     plottype_list = ['Trends', '1D Distribution', '2D Distribution']
-    plottype_dropdown = widgets.Dropdown(options=[(a, i) for (i,a) in enumerate(plottype_list)], value=0)
+    # 304px = two 150px widgets plus the 4px inter-widget margin, so the right
+    # edge lines up with the two-dropdown rows below
+    plottype_dropdown = widgets.Dropdown(options=[(a, i) for (i,a) in enumerate(plottype_list)], value=0, layout=widgets.Layout(width='304px', height='30px'))
     
     screen_type_list = ['Special', 'All']
     if (len(special_z_list) == 0):
@@ -140,7 +142,7 @@ def gpt_plot_gui(gpt_data_input):
     dist2d_clim_text = widgets.Text(value='', placeholder='auto', continuous_update=False, layout=layout_150px)
 
     # Shows the plotting command equivalent to the current GUI state
-    command_text = widgets.Textarea(value='', layout=widgets.Layout(width='95%', height='80px'))
+    command_text = widgets.Textarea(value='', layout=widgets.Layout(width='calc(100% - 4px)', height='80px'))
 
     def make_plot():
         # Clear plot window
