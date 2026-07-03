@@ -107,6 +107,7 @@ def gpt_plot_gui(gpt_data_input):
             colorbar_instance = None
         
         gui_ax.cla()
+        gui_ax.set_aspect('auto')  # cla() does not reset aspect; dist2d re-applies 'equal' if requested
         
         for old_plot in gui.children[3:]:
             old_plot.close()
