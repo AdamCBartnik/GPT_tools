@@ -55,8 +55,8 @@ def gpt_plot_gui(gpt_data_input):
     nbin_1d_text = widgets.BoundedIntText(value=50, min=5, max=500, step=1, layout=layout_150px)
     
     dist2d_type_dropdown = widgets.Dropdown(options=[('Scatter', 'scatter'), ('Histogram', 'histogram')], value='histogram', layout=layout_150px)
-    scatter_color = ['density'] + dist_list
-    dist2d_color_dropdown = widgets.Dropdown(options=[(a, i) for (i,a) in enumerate(scatter_color)], value=0, layout=layout_150px)
+    dist2d_color_list = ['density'] + dist_list
+    dist2d_color_dropdown = widgets.Dropdown(options=[(a, i) for (i,a) in enumerate(dist2d_color_list)], value=0, layout=layout_150px)
     dist2d_color_source_dropdown = widgets.Dropdown(options=[('Same screen', 'same'), ('Alternate screen', 'alt')], value='same', layout=layout_150px)
     dist2d_color_screen_type_dropdown = widgets.Dropdown(options=[(a, i) for (i,a) in enumerate(screen_type_list)], value=0, layout=layout_150px)
     dist2d_color_screen_z_dropdown = widgets.Dropdown(options=[(f'{z:.6f}', i) for (i,z) in enumerate(special_z_list)], layout=layout_100px)
@@ -202,11 +202,11 @@ def gpt_plot_gui(gpt_data_input):
         
         # Add extra parameters to pass into plotting functions
         params = {}
-#        if (not is_trend):
-        if (screen_type_dropdown.label.lower() == 'all'):
-            params['screen_z'] = screen_z_list[screen_z_dropdown.value]
-        if (screen_type_dropdown.label.lower() == 'special'):
-            params['screen_z'] = special_z_list[screen_z_dropdown.value]
+        if (not is_trend):
+            if (screen_type_dropdown.label.lower() == 'all'):
+                params['screen_z'] = screen_z_list[screen_z_dropdown.value]
+            if (screen_type_dropdown.label.lower() == 'special'):
+                params['screen_z'] = special_z_list[screen_z_dropdown.value]
         if (remove_zero_weight):
             params['kill_zero_weight'] = remove_zero_weight
         if (cyl_copies_on):

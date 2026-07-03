@@ -4,7 +4,6 @@ from gpt import GPT
 from .tools import *
 from .nicer_units import *
 from .postprocess import postprocess_screen
-from beamphysics.units import c_light, e_charge
 from .ParticleGroupExtension import ParticleGroupExtension, convert_gpt_data, divide_particles
 from ipywidgets import HBox
 import ipywidgets as widgets
@@ -24,7 +23,16 @@ def gpt_plot(gpt_data_input, var1, var2, units=None, fig_ax=None, format_input_d
         gpt_data = convert_gpt_data(gpt_data_input)
     else:
         gpt_data = copy.deepcopy(gpt_data_input)
-    
+
+    # Slice statistics (e.g. slice_emit_x) are computed per screen using the
+    # slice_key and n_slices attributes of each ParticleGroupExtension
+    if (('slice_key' in params) or ('n_slices' in params)):
+        for s in gpt_data.particles:
+            if ('slice_key' in params):
+                s.slice_key = params['slice_key']
+            if ('n_slices' in params):
+                s.n_slices = params['n_slices']
+
     if (show_survivors_after_z is not None):
         show_survivors_at_z = show_survivors_after_z
         show_survivors_after_z = True
