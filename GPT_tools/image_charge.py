@@ -1,4 +1,4 @@
-import sys, os, copy, time
+import copy
 import numpy as np
 from scipy.special import spence
 from mpmath import polylog
@@ -22,12 +22,11 @@ def MakeMetalParticleGroup(settings, DISTGEN_INPUT_FILE=None, verbose=True, only
     #
     #    The following values in settings are needed:
     #
-    #    settings['start:MTE:value'] : desired MTE (in the limit where the particles are far apart)
-    #    settings['kT:value'] : Temperature
+    #    settings['photon_energy:value'] : Energy of exciting photon
+    #    settings['work_function:value'] : Metal work function   (only the difference between the photon energy and this actually matter)
+    #    settings['kT:value'] : Temperature of cathode
     #    settings['gun_field:value'] : Field at the cathode surface
-    #    Two choices to specify QE: (here, QE means the fraction of emitted electrons that have enough energy to get over the image charge barrier)
-    #          settings['QE'] : Directly set a QE (in the limit where the particles are far apart)
-    #          settings['cathode_z_offset:value'] : Directly set the cathode offset value in the image charge model
+    #    settings['cathode_z_offset:value'] : Cathode 'fudge-factor' that keeps the potential finite at z=0
     #
     #    Note: two values of settings are modified (or added) in this code:
     #    settings['cathode_z_offset'] : This value is overwritten or created in SI units, intended to be used in GPT
@@ -40,7 +39,6 @@ def MakeMetalParticleGroup(settings, DISTGEN_INPUT_FILE=None, verbose=True, only
         barrierV = EexcAtSurface - EexcAtPeak
         pz_min = 1010.93912*np.sqrt(barrierV) # goes from eV to eV/c for an electron
         PG.pz = np.sqrt(PG.pz**2 + pz_min**2) # add energy to get over barrier
-        #PG.pz = PG.pz + pz_min  # this is wrong, temporary, please delete and replace with line above
         
     else:
         PG = MakeMetalEnergyDist(get_cathode_particlegroup(settings, DISTGEN_INPUT_FILE=DISTGEN_INPUT_FILE), EexcAtSurface, kT)
@@ -53,16 +51,16 @@ def MakeMetalParticleGroup(settings, DISTGEN_INPUT_FILE=None, verbose=True, only
 # -----------------------------------------------------------------------------
 def MakeSemiconductorParticleGroup(settings, DISTGEN_INPUT_FILE=None, verbose=True, only_survivors=False):
     # Makes a normal particlegroup using settings and DISTGEN_INPUT_FILE, and then overwrites the momentum distribution with
-    #    the distribution from a parabolic bands DOS model. Useful only for modeling individual electrons
-    #    
+    # the distribution from a parabolic density of states with energy gap. Useful only for modeling individual electrons
+    #    only_survivors: If true, then it only makes particles that will definitely escape the barrier
+    #
     #    The following values in settings are needed:
     #
-    #    settings['start:MTE:value'] : desired MTE (in the limit where the particles are far apart)
-    #    settings['kT:value'] : Temperature
+    #    settings['photon_energy:value'] : Energy of exciting photon
+    #    settings['energy_gap:value'] : Semiconductor energy gap  (only the difference between the photon energy and this actually matter)
+    #    settings['electron_affinity:value'] : Semiconductor electron affinity. Negative = easier to escape
     #    settings['gun_field:value'] : Field at the cathode surface
-    #    Two choices to specify QE: (here, QE means the fraction of emitted electrons that have enough energy to get over the image charge barrier)
-    #          settings['QE'] : Directly set a QE (in the limit where the particles are far apart)
-    #          settings['cathode_z_offset:value'] : Directly set the cathode offset value in the image charge model
+    #    settings['cathode_z_offset:value'] : Cathode 'fudge-factor' that keeps the potential finite at z=0
     #
     #    Note: two values of settings are modified (or added) in this code:
     #    settings['cathode_z_offset'] : This value is overwritten or created in SI units, intended to be used in GPT
@@ -82,7 +80,7 @@ def MakeSemiconductorParticleGroup(settings, DISTGEN_INPUT_FILE=None, verbose=Tr
             fudge_factor = np.min([3, settings['n_particle'] / (np.count_nonzero(PG.pz>=pz_min) + 1)])
             settings_copy['n_particle'] = np.ceil(settings_copy['n_particle']*fudge_factor)
             if (verbose):
-                print(f'Creating {settings_copy['n_particle']} particles to try to truncate to {settings['n_particle']}.')
+                print(f'Creating {settings_copy["n_particle"]} particles to try to truncate to {settings['n_particle']}.')
             PG = MakeSemiconductorEnergyDist(get_cathode_particlegroup(settings_copy, DISTGEN_INPUT_FILE=DISTGEN_INPUT_FILE), EexcAtSurface, EaSurf) 
         PG = PG[PG.pz>=pz_min]
         which_particles_to_keep = np.random.default_rng().choice(np.arange(0,len(PG)), size=settings['n_particle'], replace=False)
@@ -118,7 +116,6 @@ def MakeEnergyOffsetParticleGroup(settings, DISTGEN_INPUT_FILE=None, verbose=Tru
     delta_pz = 1010.93912*np.sqrt(barrierV) # goes from eV to eV/c for an electron
     PG = get_cathode_particlegroup(settings, DISTGEN_INPUT_FILE=DISTGEN_INPUT_FILE)
     PG.pz = np.sqrt(PG.pz**2 + delta_pz**2)  # add energy to get over barrier
-    #PG.pz = PG.pz + delta_pz  # this is wrong, temporary, please delete and replace with line above
     PG.weight = 1.60217663e-19   # force single electrons
     
     return PG
@@ -247,8 +244,6 @@ def getSemiconductorEexc(settings, modify_settings=True, verbose=True):
     #
     # Returns : (EexcAtSurface, EexcAtPeak, Ea + V(0))
     
-    E1 = 1.43996455e-9  #  e^2/(4*pi*epsilon_0) in eV-meters
-
     gun_field = getValueFromSettings(settings, 'gun_field', 'V/m', modify_settings=modify_settings, verbose=verbose)
     z0 = getValueFromSettings(settings, 'cathode_z_offset', 'm', modify_settings=modify_settings, verbose=verbose)
     plummer_radius = getValueFromSettings(settings, 'plummer_radius', 'm', modify_settings=modify_settings, verbose=verbose)
@@ -492,23 +487,6 @@ def uniform_pr2_dist(n):
     pr = np.sqrt(u)
     pz = np.sqrt(1.0-u)
     return (pr,pz)
-
-def get_blank_particlegroup(n_particle, verbose=False):
-    # Returns an uninitialized particlegroup of size N. Distgen seems to suck at this for small N
-    
-    variables = ['x', 'y', 'z', 'px', 'py', 'pz', 't']
-    phasing_distgen_input = {'n_particle':n_particle, 'random':{'type':'hammersley'}, 'total_charge':{'value':1.0, 'units':'pC'}, 'species':'electron', 'start': {'type':'time', 'tstart':{'value': 0.0, 'units': 's'}},}
-    gen = Generator(phasing_distgen_input, verbose=verbose) 
-    gen.run()
-    PG = gen.particles
-    
-    PG._settable_array_keys.append("id")
-    PG.id = np.arange(1, n_particle+1)
-    
-    return PG
-
-import numpy as np
-
 
 def _semi_support(Eexc, Ea):
     """
