@@ -14,7 +14,7 @@ np_polylog = np.frompyfunc(float_polylog, 2, 1)
 # -----------------------------------------------------------------------------
 # This is one of the main functions
 # -----------------------------------------------------------------------------
-def MakeMetalParticleGroup(settings, DISTGEN_INPUT_FILE=None, verbose=True, only_survivors=False):
+def MakeMetalParticleGroup(settings, DISTGEN_INPUT_FILE=None, verbose=True, only_survivors=False, rng = np.random.default_rng()):
     # Makes a normal particlegroup using settings and DISTGEN_INPUT_FILE, and then overwrites the momentum distribution with
     # the distribution from a flat density of states metal. Useful only for modeling individual electrons
     #    only_survivors: If true, then it only makes particles that will definitely escape the barrier
@@ -34,13 +34,13 @@ def MakeMetalParticleGroup(settings, DISTGEN_INPUT_FILE=None, verbose=True, only
     (EexcAtSurface, EexcAtPeak, kT) = getMetalEexc(settings, modify_settings=True, verbose=verbose)
     
     if (only_survivors):
-        PG = MakeMetalEnergyDist(get_cathode_particlegroup(settings, DISTGEN_INPUT_FILE=DISTGEN_INPUT_FILE), EexcAtPeak, kT)
+        PG = MakeMetalEnergyDist(get_cathode_particlegroup(settings, DISTGEN_INPUT_FILE=DISTGEN_INPUT_FILE), EexcAtPeak, kT, rng=rng)
         barrierV = EexcAtSurface - EexcAtPeak
         pz_min = 1010.93912*np.sqrt(barrierV) # goes from eV to eV/c for an electron
         PG.pz = np.sqrt(PG.pz**2 + pz_min**2) # add energy to get over barrier
         
     else:
-        PG = MakeMetalEnergyDist(get_cathode_particlegroup(settings, DISTGEN_INPUT_FILE=DISTGEN_INPUT_FILE), EexcAtSurface, kT)
+        PG = MakeMetalEnergyDist(get_cathode_particlegroup(settings, DISTGEN_INPUT_FILE=DISTGEN_INPUT_FILE), EexcAtSurface, kT, rng=rng)
     
     return PG
 
@@ -48,7 +48,7 @@ def MakeMetalParticleGroup(settings, DISTGEN_INPUT_FILE=None, verbose=True, only
 # -----------------------------------------------------------------------------
 # This is one of the main functions
 # -----------------------------------------------------------------------------
-def MakeSemiconductorParticleGroup(settings, DISTGEN_INPUT_FILE=None, verbose=True, only_survivors=False):
+def MakeSemiconductorParticleGroup(settings, DISTGEN_INPUT_FILE=None, verbose=True, only_survivors=False, rng = np.random.default_rng()):
     # Makes a normal particlegroup using settings and DISTGEN_INPUT_FILE, and then overwrites the momentum distribution with
     # the distribution from a parabolic density of states with energy gap. Useful only for modeling individual electrons
     #    only_survivors: If true, then it only makes particles that will definitely escape the barrier
@@ -68,25 +68,12 @@ def MakeSemiconductorParticleGroup(settings, DISTGEN_INPUT_FILE=None, verbose=Tr
     (EexcAtSurface, EexcAtPeak, EaSurf) = getSemiconductorEexc(settings, modify_settings=True, verbose=verbose)
 
     if (only_survivors):
-        # Do it the dumb way-- just make way too many particles and truncate
-        PG = MakeSemiconductorEnergyDist(get_cathode_particlegroup(settings, DISTGEN_INPUT_FILE=DISTGEN_INPUT_FILE), EexcAtSurface, EaSurf)
+        PG = MakeSemiconductorEnergyDist(get_cathode_particlegroup(settings, DISTGEN_INPUT_FILE=DISTGEN_INPUT_FILE), EexcAtPeak, EaSurf + (EexcAtSurface - EexcAtPeak))
         barrierV = EexcAtSurface - EexcAtPeak
         pz_min = 1010.93912*np.sqrt(barrierV) # goes from eV to eV/c for an electron
-        if (verbose):
-            print(f'Keeping only particles with pz > {pz_min}')
-        settings_copy = copy.copy(settings)
-        while(np.count_nonzero(PG.pz>=pz_min) < settings['n_particle']):
-            fudge_factor = np.min([3, settings['n_particle'] / (np.count_nonzero(PG.pz>=pz_min) + 1)])
-            settings_copy['n_particle'] = np.ceil(settings_copy['n_particle']*fudge_factor)
-            if (verbose):
-                print(f'Creating {settings_copy["n_particle"]} particles to try to truncate to {settings["n_particle"]}.')
-            PG = MakeSemiconductorEnergyDist(get_cathode_particlegroup(settings_copy, DISTGEN_INPUT_FILE=DISTGEN_INPUT_FILE), EexcAtSurface, EaSurf) 
-        PG = PG[PG.pz>=pz_min]
-        which_particles_to_keep = np.random.default_rng().choice(np.arange(0,len(PG)), size=settings['n_particle'], replace=False)
-        PG = PG[which_particles_to_keep]
-        PG.id = np.arange(1, settings['n_particle']+1)
+        PG.pz = np.sqrt(PG.pz**2 + pz_min**2) # add energy to get over barrier
     else:
-        PG = MakeSemiconductorEnergyDist(get_cathode_particlegroup(settings, DISTGEN_INPUT_FILE=DISTGEN_INPUT_FILE), EexcAtSurface, EaSurf)
+        PG = MakeSemiconductorEnergyDist(get_cathode_particlegroup(settings, DISTGEN_INPUT_FILE=DISTGEN_INPUT_FILE), EexcAtSurface, EaSurf, rng=rng)
     
     return PG
     
@@ -286,18 +273,18 @@ def PeakPotentialz(E0, z0, r0):
     # return 0.5*np.sqrt(E1/E0) - z0  # this is for r0 = 0, in case my crazy formula above doesn't work in some fringe case
 
 
-def MakeSemiconductorEnergyDist(pg, EexcAtSurface, EaSurf):
+def MakeSemiconductorEnergyDist(pg, EexcAtSurface, EaSurf, rng=np.random.default_rng()):
     # Make energy distribution for the parabolic density of states (with energy gap) model
     #    EexcAtSurface: Excess energy at cathode surface, eV
     #    EaSurf: Electron affinity plus the image potential at the surface, eV
     
     pnorm = 1010.93912  # sqrt(2* (electron mass) * (1 eV)) in eV/c
-    Ekin = invEcumulSemi(np.random.rand(len(pg)), EexcAtSurface, EaSurf)
+    Ekin = invEcumulSemi(rng.random(len(pg)).ravel(), EexcAtSurface, EaSurf)
     (pr, pz) = uniform_pr2_dist(len(pg))
     pz = np.abs(pz)    
     pr = pr * pnorm * np.sqrt(Ekin)
     pz = pz * pnorm * np.sqrt(Ekin)
-    phi = 2 * np.pi * np.random.rand(len(pg))
+    phi = 2 * np.pi * rng.random(len(pg)).ravel()
     pg.pz = pz
     pg.px = pr * np.cos(phi)
     pg.py = pr * np.sin(phi)
@@ -307,18 +294,18 @@ def MakeSemiconductorEnergyDist(pg, EexcAtSurface, EaSurf):
     return pg
 
 
-def MakeMetalEnergyDist(pg, EexcAtSurface, kT):   
+def MakeMetalEnergyDist(pg, EexcAtSurface, kT, rng=np.random.default_rng()):   
     # Make energy distribution for the constant DoS model
     #    EexcAtSurface: Excess energy at cathode surface, eV
     #    kT: eV
 
     pnorm = 1010.93912  # sqrt(2* (electron mass) * (1 eV)) in eV/c
-    Ekin = invEcumul(np.random.rand(len(pg)), EexcAtSurface, kT)
+    Ekin = invEcumul(rng.random(len(pg)).ravel(), EexcAtSurface, kT)
     (pr, pz) = uniform_pr2_dist(len(pg))
     pz = np.abs(pz)    
     pr = pr * pnorm * np.sqrt(Ekin)
     pz = pz * pnorm * np.sqrt(Ekin)
-    phi = 2 * np.pi * np.random.rand(len(pg))
+    phi = 2 * np.pi * rng.random(len(pg)).ravel()
     pg.pz = pz
     pg.px = pr * np.cos(phi)
     pg.py = pr * np.sin(phi)
