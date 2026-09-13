@@ -62,8 +62,8 @@ def MakeSemiconductorParticleGroup(settings, DISTGEN_INPUT_FILE=None, verbose=Tr
     #    settings['cathode_z_offset:value'] : Cathode 'fudge-factor' that keeps the potential finite at z=0
     #
     #    Optional:
-    #    settings['effective_mass'] : m*/m_e. If present, conserve transverse momentum at the semiconductor/vacuum interface.
-    #                                 If absent, retain the original disordered-crystal model exactly.
+    #    settings['effective_mass'] : Positive m*/m_e, defaults to 1.0.
+    #                                 Transverse momentum is always conserved at the interface.
     #
     #    Note: two values of settings are modified (or added) in this code:
     #    settings['cathode_z_offset'] : This value is overwritten or created in SI units, intended to be used in GPT
@@ -71,9 +71,7 @@ def MakeSemiconductorParticleGroup(settings, DISTGEN_INPUT_FILE=None, verbose=Tr
 
     (EexcAtSurface, EexcAtPeak, EaSurf) = getSemiconductorEexc(settings, modify_settings=True, verbose=verbose)
 
-    effective_mass = settings.get('effective_mass', None)
-    if effective_mass is not None and effective_mass <= 0:
-        raise ValueError('settings["effective_mass"] must be positive and should be given as m*/m_e.')
+    effective_mass = _semi_mass(settings.get('effective_mass', 1.0))
 
     if (only_survivors):
         PG = MakeSemiconductorEnergyDist(
@@ -293,13 +291,15 @@ def PeakPotentialz(E0, z0, r0):
     # return 0.5*np.sqrt(E1/E0) - z0  # this is for r0 = 0, in case my crazy formula above doesn't work in some fringe case
 
 
-def MakeSemiconductorEnergyDist(pg, EexcAtSurface, EaSurf, rng=np.random.default_rng(), *, effective_mass=None):
+def MakeSemiconductorEnergyDist(pg, EexcAtSurface, EaSurf, rng=np.random.default_rng(), *, effective_mass=1.0):
     # Make energy distribution for the parabolic density of states (with energy gap) model
     #    EexcAtSurface: Excess energy at cathode surface, eV
     #    EaSurf: Electron affinity plus the image potential at the surface, eV
-    #    effective_mass: m*/m_e. If None, use the original disordered-crystal model.
-    #                    If specified, conserve transverse momentum across the surface.
-    
+    #    effective_mass: Positive m*/m_e, defaults to 1.0.
+    #    Population flux: min(K+EaSurf, K/r)*sqrt(EexcAtSurface-K).
+    #    Transverse momentum is conserved across the surface.
+    effective_mass = _semi_mass(effective_mass)
+
     pnorm = 1010.93912  # sqrt(2* (electron mass) * (1 eV)) in eV/c
     Ekin = invEcumulSemi(
         rng.random(len(pg)).ravel(),
@@ -308,31 +308,18 @@ def MakeSemiconductorEnergyDist(pg, EexcAtSurface, EaSurf, rng=np.random.default
         effective_mass=effective_mass,
     )
 
-    if effective_mass is None:
-        # Original model: the emitted flux has sin^2(theta) uniformly distributed
-        # over the full outgoing hemisphere.
-        (pr, pz) = uniform_pr2_dist(len(pg), rng=rng)
-    else:
-        if effective_mass <= 0:
-            raise ValueError('effective_mass must be positive and should be given as m*/m_e.')
-
-        # q = K + chi is the conduction-band kinetic energy inside the material.
-        # Conservation of transverse momentum gives
-        #
-        #   sin^2(theta_out) <= min(1, (m*/m_e) q / K).
-        #
-        # The transmitted flux is uniform in sin^2(theta_out) over this range.
-        q = EaSurf + Ekin
-        ratio = np.divide(
-            effective_mass * q,
-            Ekin,
-            out=np.full_like(Ekin, np.inf, dtype=float),
-            where=Ekin > 0.0,
-        )
-        sin2_max = np.clip(ratio, 0.0, 1.0)
-        sin2_theta = rng.random(len(pg)).ravel() * sin2_max
-        pr = np.sqrt(sin2_theta)
-        pz = np.sqrt(1.0 - sin2_theta)
+    # The internal population flux is uniform in sin^2(theta_i). Refraction
+    # maps the admitted directions to a uniform outgoing sin^2 cone.
+    q = np.maximum(0.0, EaSurf + Ekin)
+    ratio = np.divide(
+        effective_mass * q,
+        Ekin,
+        out=np.full_like(Ekin, np.inf, dtype=float),
+        where=Ekin > 0.0,
+    )
+    sin2_theta = rng.random(len(pg)).ravel() * np.clip(ratio, 0.0, 1.0)
+    pr = np.sqrt(sin2_theta)
+    pz = np.sqrt(1.0 - sin2_theta)
 
     pr = pr * pnorm * np.sqrt(Ekin)
     pz = pz * pnorm * np.sqrt(Ekin)
@@ -425,89 +412,46 @@ def QE_model(Eexcz, kT, Eexc0):
     #    Eexc0 : Excess energy (at z=0) : eV
     return spence(np.exp(Eexcz/kT)+1.0)/spence(np.exp(Eexc0/kT)+1.0)
 
-def MTE_model_semi(h, v, ea, effective_mass=None):
-    # h = hv-Eg, 
-    # v = ImagePotential(z, z0, plummer_radius, gun_field)
-    # ea = Ea
-    # effective_mass = m*/m_e. None retains the original disordered-crystal model.
-    if effective_mass is not None:
-        if effective_mass <= 0:
-            raise ValueError('effective_mass must be positive and should be given as m*/m_e.')
+def MTE_model_semi(h, v, ea, effective_mass=1.0):
+    """Population-flux MTE in eV; h=hv-Eg, v=local potential, ea=affinity.
 
-        scalar_input = np.isscalar(v)
-        vv = np.asarray(v, dtype=float)
-        out = np.empty_like(vv, dtype=float)
-
-        for idx in np.ndindex(vv.shape):
-            chi = ea + vv[idx]
-            Eexc = h - chi
-            denom = _semi_total_weight(Eexc, chi, effective_mass)
-            numer = _semi_total_mte_weight(Eexc, chi, effective_mass)
-            out[idx] = numer/denom if denom > 0.0 else np.nan
-
-        if scalar_input:
-            return float(out)
-        return out
-
-    out = np.empty_like(v, dtype=float)
-    m = ea + v > 0
-
-    x = v[m]
-    s = np.sqrt(-1 + h/(ea + x))*np.arcsin(np.sqrt(-(ea - h + x)/h))
-    k = (ea - h + x)*(4*ea**2 - 4*ea*h + 3*h**2 + 8*ea*x - 4*h*x + 4*x**2) - 3*h**2*(-2*ea + h - 2*x)*s
-    n = (ea - h + x)*(2*ea - h + 2*x)*(8*ea**2 + 15*h**2 - 8*ea*(h - 2*x) - 8*h*x + 8*x**2) + 3*h**2*(16*ea**2 + 5*h**2 - 16*ea*(h - 2*x) - 16*h*x + 16*x**2)*s
-    out[m] = -n/(16*k)
-
-    x = v[~m]
-    out[~m] = (5*h**2 + 16*(ea + x)*(ea - h + x))/(16*(-2*ea + h - 2*x))
-    return out
+    Energy inputs broadcast. The positive mass ratio m*/m_e defaults to 1.
+    An empty emitting population has undefined MTE (NaN).
+    """
+    r = _semi_mass(effective_mass)
+    hh, vv, ee = np.broadcast_arrays(np.asarray(h, dtype=float),
+                                     np.asarray(v, dtype=float),
+                                     np.asarray(ea, dtype=float))
+    out = np.empty_like(vv)
+    for idx in np.ndindex(vv.shape):
+        chi = ee[idx] + vv[idx]
+        Eexc = hh[idx] - chi
+        denom = _semi_total_weight(Eexc, chi, r)
+        numer = _semi_total_mte_weight(Eexc, chi, r)
+        out[idx] = numer / denom if denom > 0.0 else np.nan
+    return float(out) if out.ndim == 0 else out
 
 
-def QE_model_semi(h, v, v0, ea, effective_mass=None):
-    # h = hv-Eg, 
-    # v = ImagePotential(z, z0, plummer_radius, gun_field)
-    # v0 = ImagePotential(0, z0, plummer_radius, gun_field)
-    # ea = Ea
-    # effective_mass = m*/m_e. None retains the original disordered-crystal model.
-    if effective_mass is not None:
-        if effective_mass <= 0:
-            raise ValueError('effective_mass must be positive and should be given as m*/m_e.')
+def QE_model_semi(h, v, v0, ea, effective_mass=1.0):
+    """Surface-to-local-potential transmission, not absolute photon QE.
 
-        scalar_input = np.isscalar(v) and np.isscalar(v0)
-        vv, vv0 = np.broadcast_arrays(np.asarray(v, dtype=float), np.asarray(v0, dtype=float))
-        out = np.empty_like(vv, dtype=float)
+    h=hv-Eg, v0=surface potential, ea=affinity; energy inputs broadcast.
+    The positive mass ratio m*/m_e defaults to 1. An empty surface population
+    gives undefined transmission (NaN); a closed final barrier gives zero.
+    """
+    r = _semi_mass(effective_mass)
+    hh, vv, vv0, ee = np.broadcast_arrays(
+        np.asarray(h, dtype=float), np.asarray(v, dtype=float),
+        np.asarray(v0, dtype=float), np.asarray(ea, dtype=float))
+    out = np.empty_like(vv)
+    for idx in np.ndindex(vv.shape):
+        chi, chi0 = ee[idx] + vv[idx], ee[idx] + vv0[idx]
+        numer = _semi_total_weight(hh[idx] - chi, chi, r)
+        denom = _semi_total_weight(hh[idx] - chi0, chi0, r)
+        out[idx] = numer / denom if denom > 0.0 else np.nan
+    return float(out) if out.ndim == 0 else out
 
-        for idx in np.ndindex(vv.shape):
-            chi = ea + vv[idx]
-            chi0 = ea + vv0[idx]
-            Eexc = h - chi
-            Eexc0 = h - chi0
-            numer = _semi_total_weight(Eexc, chi, effective_mass)
-            denom = _semi_total_weight(Eexc0, chi0, effective_mass)
-            out[idx] = numer/denom if denom > 0.0 else np.nan
 
-        if scalar_input:
-            return float(out)
-        return out
-
-    out = np.empty_like(v, dtype=float)
-
-    m = ea + v0 > 0
-    x, x0 = v[m], v0[m]
-    S = lambda y: np.sqrt(-1 + h/(ea + y))*np.arcsin(np.sqrt(-(ea - h + y)/h))
-    K = lambda y: (ea - h + y)*(4*ea**2 - 4*ea*h + 3*h**2 + 8*ea*y - 4*h*y + 4*y**2) - 3*h**2*(-2*ea + h - 2*y)*S(y)
-    out[m] = np.sqrt(-(ea + x)/(ea - h + x))*K(x)/(np.sqrt(-(ea + x0)/(ea - h + x0))*K(x0))
-
-    m1 = (~m) & (ea + v > 0)
-    x, x0 = v[m1], v0[m1]
-    s = np.sqrt(-1 + h/(ea + x))*np.arcsin(np.sqrt(-(ea - h + x)/h))
-    k = (ea - h + x)*(4*ea**2 - 4*ea*h + 3*h**2 + 8*ea*x - 4*h*x + 4*x**2) - 3*h**2*(-2*ea + h - 2*x)*s
-    out[m1] = -(2*np.sqrt(-(ea + x)/(ea - h + x))*k)/(3*h**2*np.pi*(-2*ea + h - 2*x0))
-
-    m2 = ~(m | m1)
-    out[m2] = (-2*ea + h - 2*v[m2])/(-2*ea + h - 2*v0[m2])
-    return out
-    
 def dE_MTE_model(Eexcz, kT):
     # Derivative of MTE w.r.t. Eexcz
     #    Eexcz : Excess energy (at position z) : eV
@@ -591,362 +535,110 @@ def _semi_support(Eexc, Ea):
     return Elo, Ehi
 
 
-def _semi_antideriv(Ekin, Eexc, Ea):
+def _semi_mass(effective_mass):
+    """Validate a scalar conduction-band/free-electron mass ratio."""
+    try:
+        r = float(effective_mass)
+    except (TypeError, ValueError):
+        raise ValueError("effective_mass must be a finite positive m*/m_e.") from None
+    if not np.isfinite(r) or r <= 0:
+        raise ValueError("effective_mass must be a finite positive m*/m_e.")
+    return r
+
+
+_SEMI_QUAD_NODES, _SEMI_QUAD_WEIGHTS = np.polynomial.legendre.leggauss(4)
+
+
+def _semi_integral(Ekin, Eexc, Ea, effective_mass, moment=False):
+    """Definite population-flux integral, optionally weighted by mean K_perp.
+
+    W(K) = min(K+Ea, K/r)*sqrt(Eexc-K). With t=sqrt(Eexc-K),
+    the integrands are polynomials of degree four (normalization) or six
+    (MTE numerator) on each side of K=r*Ea/(1-r). Four-point Gaussian
+    quadrature is exact on each branch up to roundoff. Positive definite
+    intervals avoid cancellation from subtracting large antiderivatives.
+    Ekin may have any shape; Eexc, Ea, and effective_mass are scalar.
     """
-    Antiderivative of
-
-        Ekin * sqrt((Ea + Ekin) * (Eexc - Ekin))
-
-    on the physical interval. This is the energy weight in the original
-    disordered-crystal semiconductor model.
-    """
-    Ekin = np.asarray(Ekin, dtype=float)
-
-    m = 0.5 * (Eexc - Ea)
-    R = 0.5 * (Eexc + Ea)
-
-    if R <= 0:
-        raise ValueError("Need Eexc + Ea > 0 for a non-empty physical interval.")
-
-    t = (Ekin - m) / R
-    t = np.clip(t, -1.0, 1.0)
-
-    s2 = np.maximum(0.0, 1.0 - t**2)
-    s = np.sqrt(s2)
-
-    return R**2 * (
-        0.5 * m * (t * s + np.arcsin(t))
-        - (R / 3.0) * s**3
-    )
-
-
-def _semi_antideriv_q(Ekin, Eexc, Ea):
-    """
-    Antiderivative of
-
-        (Ea + Ekin) * sqrt((Ea + Ekin) * (Eexc - Ekin)).
-    """
-    Ekin = np.asarray(Ekin, dtype=float)
-
-    m = 0.5 * (Eexc - Ea)
-    R = 0.5 * (Eexc + Ea)
-
-    if R <= 0:
-        raise ValueError("Need Eexc + Ea > 0 for a non-empty physical interval.")
-
-    t = (Ekin - m) / R
-    t = np.clip(t, -1.0, 1.0)
-
-    s2 = np.maximum(0.0, 1.0 - t**2)
-    s = np.sqrt(s2)
-
-    return R**3 * (
-        0.5 * (t * s + np.arcsin(t))
-        - s**3 / 3.0
-    )
-
-
-def _semi_antideriv_E2(Ekin, Eexc, Ea):
-    """
-    Antiderivative of
-
-        Ekin**2 * sqrt((Ea + Ekin) * (Eexc - Ekin)).
-    """
-    Ekin = np.asarray(Ekin, dtype=float)
-
-    m = 0.5 * (Eexc - Ea)
-    R = 0.5 * (Eexc + Ea)
-
-    if R <= 0:
-        raise ValueError("Need Eexc + Ea > 0 for a non-empty physical interval.")
-
-    t = (Ekin - m) / R
-    t = np.clip(t, -1.0, 1.0)
-
-    s2 = np.maximum(0.0, 1.0 - t**2)
-    s = np.sqrt(s2)
-
-    A0 = 0.5 * (t * s + np.arcsin(t))
-    A1 = -s**3 / 3.0
-    A2 = (np.arcsin(t) - t * s * (1.0 - 2.0*t**2)) / 8.0
-
-    return R**2 * (
-        m**2 * A0
-        + 2.0*m*R * A1
-        + R**2 * A2
-    )
-
-
-def _semi_antideriv_q2(Ekin, Eexc, Ea):
-    """
-    Antiderivative of
-
-        (Ea + Ekin)**2 * sqrt((Ea + Ekin) * (Eexc - Ekin)).
-    """
-    Ekin = np.asarray(Ekin, dtype=float)
-
-    m = 0.5 * (Eexc - Ea)
-    R = 0.5 * (Eexc + Ea)
-
-    if R <= 0:
-        raise ValueError("Need Eexc + Ea > 0 for a non-empty physical interval.")
-
-    t = (Ekin - m) / R
-    t = np.clip(t, -1.0, 1.0)
-
-    s2 = np.maximum(0.0, 1.0 - t**2)
-    s = np.sqrt(s2)
-
-    A0 = 0.5 * (t * s + np.arcsin(t))
-    A1 = -s**3 / 3.0
-    A2 = (np.arcsin(t) - t * s * (1.0 - 2.0*t**2)) / 8.0
-
-    return R**4 * (A0 + 2.0*A1 + A2)
-
-
-def _semi_piecewise_integral(Ekin, Eexc, Ea, effective_mass,
-                             primitive_q, primitive_E,
-                             q_scale=1.0, E_scale=1.0):
-    """
-    Integrate a piecewise semiconductor weight whose active branch is selected
-    by
-
-        min(Ea + E, E/effective_mass).
-
-    primitive_q and primitive_E are antiderivatives for the corresponding q
-    and E branches before q_scale and E_scale are applied.
-    """
-    r = float(effective_mass)
-    if r <= 0:
-        raise ValueError("effective_mass must be positive and should be given as m*/m_e.")
-
+    r = _semi_mass(effective_mass)
     Elo, Ehi = _semi_support(Eexc, Ea)
     x = np.clip(np.asarray(Ekin, dtype=float), Elo, Ehi)
-
-    def Pq(y):
-        return q_scale * primitive_q(y, Eexc, Ea)
-
-    def PE(y):
-        return E_scale * primitive_E(y, Eexc, Ea)
-
-    def q_branch_is_smaller(y):
-        return (Ea + y) <= y / r
-
-    # For r=1 there is no finite crossing unless Ea=0.
-    if np.isclose(r, 1.0, rtol=0.0, atol=1.0e-14):
-        use_q = Ea <= 0.0
-        P = Pq if use_q else PE
-        return P(x) - P(Elo)
-
-    Eswitch = r * Ea / (1.0 - r)
-
-    # No branch crossing inside the physical support.
-    if not (Elo < Eswitch < Ehi):
-        mid = 0.5 * (Elo + Ehi)
-        P = Pq if q_branch_is_smaller(mid) else PE
-        return P(x) - P(Elo)
-
-    # There is one crossing. Determine which branch is active on the left.
-    left_mid = 0.5 * (Elo + Eswitch)
-    left_is_q = q_branch_is_smaller(left_mid)
-
-    if left_is_q:
-        Pleft, Pright = Pq, PE
-    else:
-        Pleft, Pright = PE, Pq
-
-    I_switch = Pleft(Eswitch) - Pleft(Elo)
-
-    return np.where(
-        x <= Eswitch,
-        Pleft(x) - Pleft(Elo),
-        I_switch + Pright(x) - Pright(Eswitch),
-    )
-
-
-_SEMI_QUAD_NODES, _SEMI_QUAD_WEIGHTS = np.polynomial.legendre.leggauss(16)
-
-
-def _semi_threshold_cumul(Ekin, Eexc, Ea, effective_mass, power=1):
-    """Stable definite integral for positive affinity near emission threshold.
-
-    K = Eexc * (1-t**2) removes the upper-endpoint square root. Integrate
-    each side of the escape-cone crossing separately using Gaussian quadrature.
-    In this regime q varies by less than 5%, so the transformed integrands
-    are smooth. All terms are nonnegative; no large primitives are subtracted.
-    power=2 includes the r/2 factor for the transverse-energy numerator.
-    """
-    r = float(effective_mass)
-    if r <= 0:
-        raise ValueError("effective_mass must be positive and should be given as m*/m_e.")
-    x = np.clip(np.asarray(Ekin, dtype=float), 0.0, Eexc)
-    crossing = r * Ea / (1.0 - r) if r != 1.0 else Eexc
-    split = crossing if 0.0 < crossing < Eexc else Eexc
+    crossing = r * Ea / (1.0 - r) if r != 1.0 else Ehi
+    bounds = [Elo]
+    if Elo < crossing < Ehi:
+        bounds.append(crossing)
+    bounds.append(Ehi)
     total = np.zeros_like(x)
-    for lower, upper in ((0.0, np.minimum(x, split)),
-                         (np.minimum(x, split), x)):
-        t_hi = np.sqrt(1.0 - lower / Eexc)
-        t_lo = np.sqrt(np.maximum(0.0, 1.0 - upper / Eexc))
-        # Rationalized difference preserves narrow integration intervals.
-        width = np.divide((upper - lower) / Eexc, t_hi + t_lo,
-                          out=np.zeros_like(x), where=(t_hi + t_lo) > 0.0)
+    for lower, end in zip(bounds[:-1], bounds[1:]):
+        upper = np.clip(x, lower, end)
+        t_hi = np.sqrt(Ehi - lower)
+        t_lo = np.sqrt(np.maximum(0.0, Ehi - upper))
+        # Rationalize t_hi-t_lo to retain precision on narrow intervals.
+        width = (upper - lower) / (t_hi + t_lo)
         for node, weight in zip(_SEMI_QUAD_NODES, _SEMI_QUAD_WEIGHTS):
             fraction = 0.5 * (node + 1.0)
             t = t_hi - fraction * width
-            K = lower + Eexc * fraction * width * (t_hi + t)
-            q = Ea + K
-            total += weight * width * t**2 * np.minimum(q, K/r)**power * np.sqrt(q)
-    total *= Eexc**1.5
-    return total if power == 1 else total * (0.5*r)
+            increment = fraction * width * (t_hi + t)
+            K = lower + increment
+            q = (Ea + lower) + increment
+            admitted = np.minimum(q, K / r)
+            integrand = t**2 * admitted
+            if moment:
+                integrand *= 0.5 * r * admitted
+            total += weight * width * integrand
+    return total
 
 
-def _semi_cumul_raw(Ekin, Eexc, Ea, effective_mass):
-    """
-    Unnormalized cumulative emitted-electron energy weight when transverse
-    momentum is conserved at a mass-discontinuous semiconductor/vacuum surface.
-
-    The differential weight is
-
-        min(q, K/r) * sqrt(q * (Eexc - K)),
-
-    where q = Ea + K and r = m*/m_e.
-    """
-    r = float(effective_mass)
-    if 0.0 < Eexc < 0.05 * Ea:
-        return _semi_threshold_cumul(Ekin, Eexc, Ea, r)
-    return _semi_piecewise_integral(
-        Ekin,
-        Eexc,
-        Ea,
-        r,
-        primitive_q=_semi_antideriv_q,
-        primitive_E=_semi_antideriv,
-        q_scale=1.0,
-        E_scale=1.0/r,
-    )
+def _semi_cumul_raw(Ekin, Eexc, Ea, effective_mass=1.0):
+    """Integral of min(K+Ea, K/r)*sqrt(Eexc-K)."""
+    return _semi_integral(Ekin, Eexc, Ea, effective_mass)
 
 
-def _semi_mte_cumul_raw(Ekin, Eexc, Ea, effective_mass):
-    """
-    Unnormalized cumulative transverse-energy weight for the momentum-conserving
-    semiconductor model.
-
-    At fixed K, the mean outgoing transverse energy is
-
-        0.5 * min(K, r*q),
-
-    so the transverse-energy numerator has the piecewise integrand
-
-        (r/2) * min(q, K/r)**2 * sqrt(q * (Eexc - K)).
-    """
-    r = float(effective_mass)
-    if 0.0 < Eexc < 0.05 * Ea:
-        return _semi_threshold_cumul(Ekin, Eexc, Ea, r, power=2)
-    return _semi_piecewise_integral(
-        Ekin,
-        Eexc,
-        Ea,
-        r,
-        primitive_q=_semi_antideriv_q2,
-        primitive_E=_semi_antideriv_E2,
-        q_scale=0.5*r,
-        E_scale=0.5/r,
-    )
+def _semi_mte_cumul_raw(Ekin, Eexc, Ea, effective_mass=1.0):
+    """Population-flux integral weighted by min(K, r*(K+Ea))/2."""
+    return _semi_integral(Ekin, Eexc, Ea, effective_mass, moment=True)
 
 
-def _semi_total_weight(Eexc, Ea, effective_mass):
-    """Total unnormalized momentum-conserving semiconductor emission weight."""
-    Elo = max(0.0, -Ea)
-    if Eexc <= Elo:
+def _semi_total_weight(Eexc, Ea, effective_mass=1.0):
+    """Total unnormalized population flux; zero for empty support."""
+    r = _semi_mass(effective_mass)
+    if Eexc <= max(0.0, -Ea):
         return 0.0
-    return float(_semi_cumul_raw(Eexc, Eexc, Ea, effective_mass))
+    return float(_semi_cumul_raw(Eexc, Eexc, Ea, r))
 
 
-def _semi_total_mte_weight(Eexc, Ea, effective_mass):
-    """Total unnormalized transverse-energy numerator."""
-    Elo = max(0.0, -Ea)
-    if Eexc <= Elo:
+def _semi_total_mte_weight(Eexc, Ea, effective_mass=1.0):
+    """Total transverse-energy numerator; zero for empty support."""
+    r = _semi_mass(effective_mass)
+    if Eexc <= max(0.0, -Ea):
         return 0.0
-    return float(_semi_mte_cumul_raw(Eexc, Eexc, Ea, effective_mass))
+    return float(_semi_mte_cumul_raw(Eexc, Eexc, Ea, r))
 
 
-def EcumulprobSemi(Ekin, Eexc, Ea, effective_mass=None):
+def EcumulprobSemi(Ekin, Eexc, Ea, effective_mass=1.0):
+    """CDF of W(K) proportional to min(K+Ea, K/r)*sqrt(Eexc-K).
+
+    r=m*/m_e defaults to 1. Transverse momentum is always conserved.
     """
-    Cumulative probability distribution for the semiconductor kinetic-energy
-    distribution.
+    r = _semi_mass(effective_mass)
+    norm = _semi_cumul_raw(Eexc, Eexc, Ea, r)
+    F = np.clip(_semi_cumul_raw(Ekin, Eexc, Ea, r) / norm, 0.0, 1.0)
+    return float(F) if np.isscalar(Ekin) else F
 
-    If effective_mass is None, this is the original disordered-crystal model:
 
-        P(K) proportional to K*sqrt((Ea+K)*(Eexc-K)).
-
-    If effective_mass = m*/m_e is supplied, transverse momentum is conserved
-    across the semiconductor/vacuum interface and the energy weight becomes
-
-        P(K) proportional to min(Ea+K, K/effective_mass)
-                            * sqrt((Ea+K)*(Eexc-K)).
-    """
+def dEcumulprobSemi(Ekin, Eexc, Ea, effective_mass=1.0):
+    """Normalized population-flux PDF; zero outside its physical support."""
+    r = _semi_mass(effective_mass)
     scalar_input = np.isscalar(Ekin)
     Ekin = np.asarray(Ekin, dtype=float)
-
     Elo, Ehi = _semi_support(Eexc, Ea)
-    Eclip = np.clip(Ekin, Elo, Ehi)
-
-    if effective_mass is None:
-        A_lo = _semi_antideriv(Elo, Eexc, Ea)
-        A_hi = _semi_antideriv(Ehi, Eexc, Ea)
-        norm = A_hi - A_lo
-        F = (_semi_antideriv(Eclip, Eexc, Ea) - A_lo) / norm
-    else:
-        if effective_mass <= 0:
-            raise ValueError("effective_mass must be positive and should be given as m*/m_e.")
-        norm = _semi_cumul_raw(Ehi, Eexc, Ea, effective_mass)
-        F = _semi_cumul_raw(Eclip, Eexc, Ea, effective_mass) / norm
-
-    F = np.clip(F, 0.0, 1.0)
-
-    if scalar_input:
-        return float(F)
-
-    return F
+    weight = np.maximum(0.0, np.minimum(Ea + Ekin, Ekin / r))
+    root = np.sqrt(np.maximum(0.0, Eexc - Ekin))
+    norm = _semi_cumul_raw(Ehi, Eexc, Ea, r)
+    pdf = np.where((Ekin >= Elo) & (Ekin <= Ehi), weight * root / norm, 0.0)
+    return float(pdf) if scalar_input else pdf
 
 
-def dEcumulprobSemi(Ekin, Eexc, Ea, effective_mass=None):
-    """
-    Derivative of the semiconductor CDF with respect to Ekin.
-    This is the normalized semiconductor kinetic-energy PDF.
-    """
-    scalar_input = np.isscalar(Ekin)
-    Ekin = np.asarray(Ekin, dtype=float)
-
-    Elo, Ehi = _semi_support(Eexc, Ea)
-    q = Ea + Ekin
-    inside = q * (Eexc - Ekin)
-    root = np.sqrt(np.maximum(0.0, inside))
-
-    if effective_mass is None:
-        A_lo = _semi_antideriv(Elo, Eexc, Ea)
-        A_hi = _semi_antideriv(Ehi, Eexc, Ea)
-        norm = A_hi - A_lo
-        pdf = Ekin * root / norm
-    else:
-        r = float(effective_mass)
-        if r <= 0:
-            raise ValueError("effective_mass must be positive and should be given as m*/m_e.")
-        weight = np.minimum(q, Ekin/r)
-        weight = np.maximum(0.0, weight)
-        norm = _semi_cumul_raw(Ehi, Eexc, Ea, r)
-        pdf = weight * root / norm
-
-    in_range = (Ekin >= Elo) & (Ekin <= Ehi)
-    pdf = np.where(in_range, pdf, 0.0)
-
-    if scalar_input:
-        return float(pdf)
-
-    return pdf
-
-
-def invEcumulSemi(p, Eexc, Ea, ptol=1.0e-7, max_iter=200, *, effective_mass=None):
+def invEcumulSemi(p, Eexc, Ea, ptol=1.0e-7, max_iter=200, *, effective_mass=1.0):
     """
     Invert the semiconductor cumulative probability distribution using a
     safeguarded Newton iteration.
@@ -959,9 +651,9 @@ def invEcumulSemi(p, Eexc, Ea, ptol=1.0e-7, max_iter=200, *, effective_mass=None
         Excess energy at the position where the distribution is being sampled.
     Ea : float
         Local affinity-like energy parameter, chi = Ea + V(z).
-    effective_mass : float or None
-        If None, use the original disordered-crystal model. Otherwise this is
-        m*/m_e and transverse momentum is conserved across the surface.
+    effective_mass : float
+        Positive m*/m_e, defaults to 1. Transverse momentum is conserved.
+        The energy distribution uses the revised population-flux weight.
     ptol : float
         Absolute tolerance in cumulative probability.
     max_iter : int
@@ -970,11 +662,10 @@ def invEcumulSemi(p, Eexc, Ea, ptol=1.0e-7, max_iter=200, *, effective_mass=None
     scalar_input = np.isscalar(p)
     p = np.asarray(p, dtype=float)
 
-    if np.any((p < 0.0) | (p > 1.0)):
+    if np.any(~np.isfinite(p) | (p < 0.0) | (p > 1.0)):
         raise ValueError("p must be in the interval [0, 1].")
 
-    if effective_mass is not None and effective_mass <= 0:
-        raise ValueError("effective_mass must be positive and should be given as m*/m_e.")
+    effective_mass = _semi_mass(effective_mass)
 
     Elo, Ehi = _semi_support(Eexc, Ea)
 
