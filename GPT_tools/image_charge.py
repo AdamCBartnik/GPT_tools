@@ -293,7 +293,7 @@ def PeakPotentialz(E0, z0, r0):
     # return 0.5*np.sqrt(E1/E0) - z0  # this is for r0 = 0, in case my crazy formula above doesn't work in some fringe case
 
 
-def MakeSemiconductorEnergyDist(pg, EexcAtSurface, EaSurf, effective_mass=None, rng=np.random.default_rng()):
+def MakeSemiconductorEnergyDist(pg, EexcAtSurface, EaSurf, rng=np.random.default_rng(), *, effective_mass=None):
     # Make energy distribution for the parabolic density of states (with energy gap) model
     #    EexcAtSurface: Excess energy at cathode surface, eV
     #    EaSurf: Electron affinity plus the image potential at the surface, eV
@@ -764,6 +764,42 @@ def _semi_piecewise_integral(Ekin, Eexc, Ea, effective_mass,
     )
 
 
+_SEMI_QUAD_NODES, _SEMI_QUAD_WEIGHTS = np.polynomial.legendre.leggauss(16)
+
+
+def _semi_threshold_cumul(Ekin, Eexc, Ea, effective_mass, power=1):
+    """Stable definite integral for positive affinity near emission threshold.
+
+    K = Eexc * (1-t**2) removes the upper-endpoint square root. Integrate
+    each side of the escape-cone crossing separately using Gaussian quadrature.
+    In this regime q varies by less than 5%, so the transformed integrands
+    are smooth. All terms are nonnegative; no large primitives are subtracted.
+    power=2 includes the r/2 factor for the transverse-energy numerator.
+    """
+    r = float(effective_mass)
+    if r <= 0:
+        raise ValueError("effective_mass must be positive and should be given as m*/m_e.")
+    x = np.clip(np.asarray(Ekin, dtype=float), 0.0, Eexc)
+    crossing = r * Ea / (1.0 - r) if r != 1.0 else Eexc
+    split = crossing if 0.0 < crossing < Eexc else Eexc
+    total = np.zeros_like(x)
+    for lower, upper in ((0.0, np.minimum(x, split)),
+                         (np.minimum(x, split), x)):
+        t_hi = np.sqrt(1.0 - lower / Eexc)
+        t_lo = np.sqrt(np.maximum(0.0, 1.0 - upper / Eexc))
+        # Rationalized difference preserves narrow integration intervals.
+        width = np.divide((upper - lower) / Eexc, t_hi + t_lo,
+                          out=np.zeros_like(x), where=(t_hi + t_lo) > 0.0)
+        for node, weight in zip(_SEMI_QUAD_NODES, _SEMI_QUAD_WEIGHTS):
+            fraction = 0.5 * (node + 1.0)
+            t = t_hi - fraction * width
+            K = lower + Eexc * fraction * width * (t_hi + t)
+            q = Ea + K
+            total += weight * width * t**2 * np.minimum(q, K/r)**power * np.sqrt(q)
+    total *= Eexc**1.5
+    return total if power == 1 else total * (0.5*r)
+
+
 def _semi_cumul_raw(Ekin, Eexc, Ea, effective_mass):
     """
     Unnormalized cumulative emitted-electron energy weight when transverse
@@ -776,6 +812,8 @@ def _semi_cumul_raw(Ekin, Eexc, Ea, effective_mass):
     where q = Ea + K and r = m*/m_e.
     """
     r = float(effective_mass)
+    if 0.0 < Eexc < 0.05 * Ea:
+        return _semi_threshold_cumul(Ekin, Eexc, Ea, r)
     return _semi_piecewise_integral(
         Ekin,
         Eexc,
@@ -802,6 +840,8 @@ def _semi_mte_cumul_raw(Ekin, Eexc, Ea, effective_mass):
         (r/2) * min(q, K/r)**2 * sqrt(q * (Eexc - K)).
     """
     r = float(effective_mass)
+    if 0.0 < Eexc < 0.05 * Ea:
+        return _semi_threshold_cumul(Ekin, Eexc, Ea, r, power=2)
     return _semi_piecewise_integral(
         Ekin,
         Eexc,
@@ -906,7 +946,7 @@ def dEcumulprobSemi(Ekin, Eexc, Ea, effective_mass=None):
     return pdf
 
 
-def invEcumulSemi(p, Eexc, Ea, effective_mass=None, ptol=1.0e-7, max_iter=200):
+def invEcumulSemi(p, Eexc, Ea, ptol=1.0e-7, max_iter=200, *, effective_mass=None):
     """
     Invert the semiconductor cumulative probability distribution using a
     safeguarded Newton iteration.
