@@ -283,6 +283,8 @@ class front_gui:
         if (not self.show_constraint_violators_checkbox.value):
             pop = self.remove_constraint_violators(copy.copy(pop))
         
+        # Match the NaN filtering in make_plot so which_point indexes the same rows that were plotted
+        pop = pop[self.not_nan_mask(pop)]
         pop_index = np.array(pop.index)
             
         all_settings = pop.to_dict('index')[pop_index[which_point]]
@@ -300,13 +302,24 @@ class front_gui:
         self.settings_menu.disabled = False
         self.settings_value.disabled = False
         
-        self.settings_menu.options = self.settings.keys()
+        # ipywidgets 8 sets value to None when options change, so choose the value explicitly
+        old_menu_value = self.settings_menu.value
+        self.settings_menu.unobserve_all(name='value')
+        self.settings_menu.options = list(self.settings.keys())
+        if (old_menu_value in self.settings):
+            self.settings_menu.value = old_menu_value
+        else:
+            self.settings_menu.value = self.settings_menu.options[0]
+        self.settings_menu.observe(self.show_settings, names='value')
         
         self.settings_value.unobserve_all(name='value')
         self.settings_value.value = str(self.settings[self.settings_menu.value])
         self.settings_value.observe(self.edit_settings_to_run, names = 'value')
         
         
+    
+    def not_nan_mask(self, pop):
+        return np.logical_not(np.isnan(pop[self.x_select.value]) | np.isnan(pop[self.y_select.value])).to_numpy()
     
     def reset_units(self, owner):
         if (owner == self.x_select):
@@ -533,7 +546,7 @@ class front_gui:
             if (self.c_select.value != 'None'):
                 c = pop[self.c_select.value]* 10**(-float(self.c_scale.value))
             
-            not_nan = np.logical_not(np.isnan(x))
+            not_nan = self.not_nan_mask(pop)
             
             if (self.c_select.value != 'None'):
                 line_handle = self.ax.scatter(x[not_nan], y[not_nan], 10, c=c[not_nan], vmin=cmin, vmax=cmax, cmap='jet', marker='.', zorder=ii_backwards)
