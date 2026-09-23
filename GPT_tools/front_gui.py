@@ -1,5 +1,6 @@
 import ipywidgets as widgets
 import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
 import glob, os, yaml, copy
 import pandas as pd
 import numpy as np
@@ -14,7 +15,7 @@ from scipy.optimize import curve_fit
 class front_gui:
     def __init__(self, xopt_file, pop_directory):
         
-        self.default_color_list = plt.rcParams['axes.prop_cycle'].by_key()['color']
+        self.default_color_list = [mcolors.to_hex(c) for c in plt.rcParams['axes.prop_cycle'].by_key()['color']]
         self.color_dict = {}
         self.default_legend_dict = {}
         self.legend_dict = {}
