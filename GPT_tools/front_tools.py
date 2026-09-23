@@ -87,6 +87,8 @@ def show_fronts(pop_number, obj1_key, obj2_key, obj3_key=None,
                 if (legend_color is None):
                     cmap = plt.get_cmap('jet')
                     #legend_color = cmap(np.median(obj3[not_nan]))
+            p_list.append(sc)
+            leg_list.append(f'Pop {pop_number}')
             if (colorbar):
                 cbar = plt.colorbar(sc)
                 if (zlabel is None):
@@ -117,7 +119,7 @@ def show_fronts(pop_number, obj1_key, obj2_key, obj3_key=None,
             line_handle.set_label(legend)
             plt.legend()
 
-        if (legend != 'off'):
+        if (legend != 'off' and obj3_key is None):
             if (legend == 'on'):
                 if (len(p_list) == len(leg_list)):
                     for ii,p in enumerate(p_list):
@@ -143,13 +145,12 @@ def show_fronts(pop_number, obj1_key, obj2_key, obj3_key=None,
     def on_click(event):
         
         ind = np.nanargmin((obj1 - snap_cursor.pos[0])**2 + (obj2 - snap_cursor.pos[1])**2)
-        settings = pop.to_dict('index')[pop_index[ind]]
+        settings = pop.iloc[ind].to_dict()  # by position: xopt_index is not unique in xopt 3 output files
         obj1_val = settings[obj1_key] * obj1_scale
         obj2_val = settings[obj2_key] * obj2_scale
         if (xopt_yaml is not None):
-            wanted_keys = {**xopt_yaml['vocs']['variables'], **xopt_yaml['vocs']['constants']}.keys()
-            settings = dict((k, settings[k]) for k in wanted_keys if k in settings)
-        settings_box.value = f'index = {ind}\n{obj1_key} = {obj1_val:.7g}\n{obj2_key} = {obj2_val:.7g}\n\nsettings = {settings}'
+            settings = dict((k, settings[k]) for k in get_input_keys(xopt_yaml) if k in settings)
+        settings_box.value = f'index = {pop_index[ind]}\n{obj1_key} = {obj1_val:.7g}\n{obj2_key} = {obj2_val:.7g}\n\nsettings = {settings}'
         
     if (return_data):
         return output_data
@@ -170,9 +171,8 @@ def show_fronts(pop_number, obj1_key, obj2_key, obj3_key=None,
 def fix_xopt_pop_datafile(filename):
     pdf = pd.read_csv(filename, index_col = "xopt_index")
     good_row = pdf[pdf["xopt_error"] == False].iloc[0]
-    bad_row_numbers = np.array(pdf[pdf["xopt_error"] == True].index)
-    for ii in bad_row_numbers:
-        pdf[pdf.index == ii] = good_row
+    bad_rows = (pdf["xopt_error"] == True).to_numpy()
+    pdf.iloc[bad_rows] = good_row.to_numpy()  # by mask: xopt_index labels can repeat
     pdf.to_csv(filename)
     
 def make_settings_csv(csv_filename, settings):
@@ -195,8 +195,8 @@ def find_settings(pop_number, obj1_target, pop_path=os.path.join('tmp'), xopt_fi
     
     pop, pop_number, pop_filename = get_pop(pop_path, pop_number, xopt_file, show_constraint_violators=False)
                 
-    index = np.array(pop.index)
-    obj1 = np.array(pop[obj1_key]) * obj1_scale 
+    index = np.arange(len(pop))  # row positions: xopt_index is not unique in xopt 3 output files
+    obj1 = np.array(pop[obj1_key]) * obj1_scale  
     obj2 = np.array(pop[obj2_key]) * obj2_scale
     
     if (obj3_key is not None):
@@ -217,14 +217,14 @@ def find_settings(pop_number, obj1_target, pop_path=os.path.join('tmp'), xopt_fi
     
     if (len(obj2)==0):
         print('No values found.')
-        return Null
+        return None
     else:
         if (minimize):
             best_dude = possible_dudes[np.argmin(obj2)]
         else:
             best_dude = possible_dudes[np.argmax(obj2)]
             
-        settings = pop.to_dict('index')[index[best_dude]]
+        settings = pop.iloc[index[best_dude]].to_dict()
             
         print(f'{obj1_key} = {settings[obj1_key]*obj1_scale}')
         print(f'{obj2_key} = {settings[obj2_key]*obj2_scale}')
@@ -234,8 +234,7 @@ def find_settings(pop_number, obj1_target, pop_path=os.path.join('tmp'), xopt_fi
         if(isinstance(xopt_file, str)):
             with open(xopt_file, 'r') as fid:
                 xopt_yaml =  yaml.safe_load(fid)
-            wanted_keys = {**xopt_yaml['vocs']['variables'], **xopt_yaml['vocs']['constants']}.keys()
-            settings = dict((k, settings[k]) for k in wanted_keys if k in settings)
+            settings = dict((k, settings[k]) for k in get_input_keys(xopt_yaml) if k in settings)
             
         print(settings)
         return 
@@ -283,7 +282,7 @@ def get_pop(pop_path, pop_number, xopt_file=None, show_constraint_violators=Fals
     
 
 def pop_sampler(data, xopt_file, new_pop_size):
-    xopt = Xopt(xopt_file)
+    xopt = Xopt.from_file(xopt_file)
     vocs = xopt.vocs
     vocs.constraints = {}
 
@@ -293,7 +292,7 @@ def pop_sampler(data, xopt_file, new_pop_size):
 
     pop = toolbox.select(pop, new_pop_size)
 
-    return data.loc[[int(p.index) for p in pop]]
+    return data.iloc[[int(p.index) for p in pop]]  # p.index is positional; labels may repeat
 
     
 def clamp_population(pop_number, pop_path, xopt_file):
@@ -370,12 +369,13 @@ def color_all_settings(pop_number, pop_path, xopt_file=None, obj1_key = 'end_sig
     
     pop, pop_number, pop_filename = get_pop(pop_path, pop_number, xopt_file, show_constraint_violators=show_constraint_violators)
         
+    xopt_yaml = xopt_file
     if(isinstance(xopt_file, str)):
         with open(xopt_file, 'r') as fid:
             xopt_yaml =  yaml.safe_load(fid)
-            
+
     vars = list(xopt_yaml['vocs']['variables'].keys())
-    cons = list(xopt_yaml['vocs']['constraints'].keys())
+    cons = list((xopt_yaml['vocs'].get('constraints') or {}).keys())
     all_items = vars + cons
         
     if (obj1_key in all_items):
@@ -395,6 +395,10 @@ def color_all_settings(pop_number, pop_path, xopt_file=None, obj1_key = 'end_sig
     
     return vbox
     
+
+def get_input_keys(xopt_yaml):
+    # Variables and constants from the xopt yaml; the constants section is optional
+    return list({**xopt_yaml['vocs']['variables'], **(xopt_yaml['vocs'].get('constants') or {})}.keys())
 
 def get_xopt_file(pop_path):
     pop_path_split = os.path.split(os.path.normpath(pop_path))
@@ -433,7 +437,7 @@ def get_only_feasible_results(pop_df, xopt_yaml='xopt.yaml'):
     # Remove individuals that threw an error
     pop_df = pop_df[pop_df['xopt_error']!=True] 
         
-    for c, v in xopt_yaml['vocs']['constraints'].items():
+    for c, v in (xopt_yaml['vocs'].get('constraints') or {}).items():
         
         bin_opr, bound = v[0], v[1]
         bound = float(bound)
@@ -449,34 +453,36 @@ def get_only_feasible_results(pop_df, xopt_yaml='xopt.yaml'):
 
 def get_ind_settings_dict_from_pop_dataframe(pop_element, X):
     
-    variables = list(X.generator.vocs.variables.keys())
-    constants = list(X.generator.vocs.constants.keys())
-    xopt_constants = X.generator.vocs.constants
-    
-    #input_setting_names = variables + constants
-    
-    #ind_df = pop_df.loc[[xopt_ind]]
+    variables = list(X.vocs.variables.keys())
+    constants = list(X.vocs.constants.keys())
+    xopt_constants = X.vocs.constants
+
     ind_dict = pop_element.to_dict()
     settings_dict_vars = {c:ind_dict[c] for c in list(ind_dict.keys()) if c in variables}
-    settings_dict_consts = {c:xopt_constants[c] for c in list(ind_dict.keys()) if c in constants}
+    # xopt 3 stores constants as Constant objects; older versions stored the bare value
+    settings_dict_consts = {c:getattr(xopt_constants[c], 'value', xopt_constants[c]) for c in list(ind_dict.keys()) if c in constants}
     return {**settings_dict_vars, **settings_dict_consts}
 
 def run_xopt_func(settings):
-    return X.evaluate(settings)
+    return _reevaluate_X.evaluate(settings)  # module global set by reevaluate_population, inherited by forked workers
 
 def replace_pop_df_evaluation_output(pop_sample, evaluation_list, settings_list):
+    # Assign column by column; DataFrame.replace would swap matching values in every column
+    pop_sample = pop_sample.copy()
     output_keys = list(evaluation_list[0].keys())
     input_keys = list(settings_list[0].keys())
     for k in output_keys:
-        pop_sample = pop_sample.replace(list(pop_sample[k]), [p[k] for p in evaluation_list])
+        pop_sample[k] = [p[k] for p in evaluation_list]
     for k in input_keys:
-        pop_sample = pop_sample.replace(list(pop_sample[k]), [p[k] for p in settings_list])
+        pop_sample[k] = [p[k] for p in settings_list]
     return pop_sample
 
 def reevaluate_population(xopt_file, pop_num = -1, pop_path = None):
     
     ### Open Xopt ###
-    X = Xopt(xopt_file)
+    global _reevaluate_X
+    X = Xopt.from_file(xopt_file)
+    _reevaluate_X = X
     xopt_input = yaml.safe_load(open(xopt_file))
     
     ### Check for population file in Xopt ###
@@ -501,8 +507,7 @@ def reevaluate_population(xopt_file, pop_num = -1, pop_path = None):
     except Exception as ex:
         print(ex)
 
-    executor = ProcessPoolExecutor()
-    executor.max_workers = pop_sample.shape[0]
+    executor = ProcessPoolExecutor(max_workers=pop_sample.shape[0])
     
     ### Get settings from population subset and xopt ###
     all_ind_settings = [get_ind_settings_dict_from_pop_dataframe(p, X) for i, p in pop_sample.iterrows()]
