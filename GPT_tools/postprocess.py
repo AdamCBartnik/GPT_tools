@@ -1,13 +1,11 @@
 import numpy as np
-import numpy.matlib as npm
 import copy
 from .ParticleGroupExtension import ParticleGroupExtension, divide_particles
 import numpy.polynomial.polynomial as poly
-from random import shuffle
 
 def postprocess_screen(screen, **params):
-    need_copy_params = ['take_slice', 'take_range', 'cylindrical_copies', 'remove_correlation', 'kill_zero_weight', 
-                        'radial_aperture', 'remove_spinning', 'include_ids', 'random_N', 'first_N', 'clip_to_charge']
+    need_copy_params = ['take_slice', 'take_range', 'cylindrical_copies', 'remove_correlation', 'kill_zero_weight',
+                        'remove_spinning', 'include_ids', 'random_N', 'first_N', 'clip_to_charge', 'clip_to_emit']
     need_copy = any([p in params for p in need_copy_params])
     
     if ('need_copy' in params):
@@ -118,7 +116,7 @@ def id_of_nearest_N(screen_input, center_particle_id, N, ndim=4):
     sigma_matrix = np.cov(u0, aweights=w)
             
     # Change into round phase space coordinates
-    (E, V) = np.linalg.eig(sigma_matrix)
+    (E, V) = np.linalg.eigh(sigma_matrix)
     u1 = np.diag(1.0/np.sqrt(E)) @ np.linalg.solve(V, u0)
         
     u1_cen = u1[:, pid == center_particle_id]
@@ -130,10 +128,10 @@ def id_of_nearest_N(screen_input, center_particle_id, N, ndim=4):
 
     
 # Returns a screen with either only the first N or a random N particles remaining
-def random_N(screen, N, random=True, make_copy=False):
+def random_N(screen, N, random=True, make_copy=False, seed=None):
     alive_ids = screen.id[screen.weight > 0]
     if (random):
-        shuffle(alive_ids)
+        alive_ids = np.random.default_rng(seed).permutation(alive_ids)  # pass seed for a reproducible selection
     if (N < len(alive_ids)):
         alive_ids = alive_ids[0:N]
     return include_ids(screen, alive_ids, make_copy)
@@ -145,45 +143,35 @@ def include_ids(screen_input, ids, make_copy=False):
         screen = copy.deepcopy(screen_input)
     else:
         screen = screen_input
-    id_to_index = {id : i for i,id in enumerate(screen.id)}
-    ids_to_zero = np.setdiff1d(screen.id, ids, assume_unique=True)
-    ind_to_zero = [id_to_index[id] for id in ids_to_zero]
-    screen.weight[ind_to_zero] = 0.0
+    screen.weight[np.logical_not(np.isin(screen.id, ids))] = 0.0
     
     return kill_zero_weight(screen, make_copy=False)
 
 
-# Removes a screen without the x-py, y-px correlations associated with particles spinning in a solenoid
+# Removes the rotation (angular momentum about the beam centroid) from particles spinning in a solenoid.
+# Only the antisymmetric part of the x-py, y-px correlation is removed, so e.g. skew-quad coupling is kept.
 def remove_spinning(screen_input, make_copy=False):
     if (make_copy==True):
         screen = copy.deepcopy(screen_input)
     else:
         screen = screen_input
-    x = copy.copy(screen.x)
-    px = copy.copy(screen.px)
-    y = copy.copy(screen.y)
-    py = copy.copy(screen.py)
     w = screen.weight
-
     sumw = np.sum(w)
 
-    x = x - np.sum(x*w)/sumw
-    px = px - np.sum(px*w)/sumw
-    y = y - np.sum(y*w)/sumw
-    py = py - np.sum(py*w)/sumw
+    x = screen.x - np.sum(screen.x*w)/sumw
+    px = screen.px - np.sum(screen.px*w)/sumw
+    y = screen.y - np.sum(screen.y*w)/sumw
+    py = screen.py - np.sum(screen.py*w)/sumw
 
-    x2 = np.sum(x*x*w)/sumw
-    y2 = np.sum(y*y*w)/sumw
+    u2 = 0.5*(np.sum(x*x*w) + np.sum(y*y*w))/sumw
+    L = 0.5*(np.sum(x*py*w) - np.sum(y*px*w))/sumw    # angular momentum per particle / 2, about the centroid
 
-    xpy = np.sum(x*py*w)/sumw
-    ypx = np.sum(y*px*w)/sumw
+    # Rigid-rotation kick about the centroid: px -> px + (L/u2)*y, py -> py - (L/u2)*x makes <x py - y px> = 0
+    # without moving the centroid (same form as in core_emit_calc_4d)
+    C = L/u2
+    screen.px = screen.px + C*y
+    screen.py = screen.py - C*x
 
-    C1 = -ypx/y2
-    C2 = -xpy/x2
-    
-    screen.px = screen.px + C1*screen.y
-    screen.py = screen.py + C2*screen.x
-        
     return screen
 
 
@@ -218,7 +206,7 @@ def take_range(screen_input, take_range_var, range_min, range_max, make_copy=Fal
     
     if (take_range_var in ['x','y','z','t']):
         # Subtract mean
-        x = x - sum(x*screen.weight)/sum(screen.weight)
+        x = x - np.sum(x*screen.weight)/np.sum(screen.weight)
     
     out_of_range = np.logical_or(x < range_min, x > range_max)
 
@@ -300,20 +288,31 @@ def clip_to_emit(PG_input, clipping_emit, verbose=False, make_copy=False):
         PG = copy.deepcopy(PG_input)
     else:
         PG = PG_input
-        
+
     min_final_particles = 3
-    
-    r_i = np.argsort(PG.r)
-    r = PG.r[r_i]
-    emit_i = np.zeros(len(r_i))
-    
-    PG2 = ParticleGroupExtension(copy.deepcopy(PG))
-    emit_i[len(r_i)-1] = PG2.sqrt_norm_emit_4d
-    
-    for ii in np.arange(len(r_i)-1,min_final_particles,-1):
-        PG2.weight[r_i[ii]] = 0
-        emit_i[ii-1] = PG2.sqrt_norm_emit_4d
-    
+
+    # Radius about the beam centroid (as in clip_to_charge)
+    w_all = PG.weight
+    r_centered = np.sqrt((PG.x - np.sum(PG.x*w_all)/np.sum(w_all))**2 + (PG.y - np.sum(PG.y*w_all)/np.sum(w_all))**2)
+    r_i = np.argsort(r_centered)
+    r = r_centered[r_i]
+
+    # emit_i[j] = sqrt_norm_emit_4d of the j+1 innermost particles, from running weighted sums
+    # (same weighted covariance as ParticleGroup.cov, i.e. np.cov with aweights)
+    u = np.array([PG.x, PG.px, PG.y, PG.py])[:, r_i]
+    u = u - np.mean(u, axis=1, keepdims=True)                   # reduces roundoff in the running sums
+    w = w_all[r_i]
+    v1 = np.cumsum(w)
+    v2 = np.cumsum(w*w)
+    S1 = np.cumsum(u*w, axis=1).T                               # (N, 4)
+    S2 = np.cumsum(np.einsum('in,jn->nij', u, u)*w[:, None, None], axis=0)   # (N, 4, 4)
+
+    with np.errstate(divide='ignore', invalid='ignore'):
+        C = S2 - S1[:, :, None]*S1[:, None, :]/v1[:, None, None]
+        C = C / (v1 - v2/v1)[:, None, None]
+        emit_i = np.power(np.linalg.det(C), 0.25) / PG.mass     # NaN where det < 0 (too few particles), as before
+    emit_i[:min_final_particles] = 0
+
     if (clipping_emit >= emit_i[-1]):
         n_clip = -1
     else:
@@ -321,65 +320,38 @@ def clip_to_emit(PG_input, clipping_emit, verbose=False, make_copy=False):
     if (n_clip < (min_final_particles-1) and n_clip > -1):
         n_clip = min_final_particles-1
     r_cut = r[n_clip]
-    PG.weight[PG.r>r_cut] = 0
+    PG.weight[r_centered>r_cut] = 0
     if (verbose):
         print(f'Clipping at r = {r_cut}')
     PG = kill_zero_weight(PG, make_copy=False)
-    
+
     return PG
 
 
-# Duplicates all particles n_copies times, uniformly rotated around the z-axis. Useful for making pretty plots when the screen is cylindrically symmetric 
+# Duplicates all particles n_copies times, uniformly rotated around the z-axis. Useful for making pretty plots when the screen is cylindrically symmetric
 def add_cylindrical_copies(screen_input, n_copies, make_copy=False):
-    if (make_copy==True):
-        screen = copy.deepcopy(screen_input)
-    else:
-        screen = screen_input
-    species = screen.species
+    screen = screen_input  # a new group is always returned; make_copy is kept for a consistent signature
     npart = len(screen.x)
-    
-    x = np.matlib.repmat(screen.x, 1, n_copies).reshape(npart*n_copies)
-    y = np.matlib.repmat(screen.y, 1, n_copies).reshape(npart*n_copies)
-    z = np.matlib.repmat(screen.z, 1, n_copies).reshape(npart*n_copies)
-    px = np.matlib.repmat(screen.px, 1, n_copies).reshape(npart*n_copies)
-    py = np.matlib.repmat(screen.py, 1, n_copies).reshape(npart*n_copies)
-    pz = np.matlib.repmat(screen.pz, 1, n_copies).reshape(npart*n_copies)
-    t = np.matlib.repmat(screen.t, 1, n_copies).reshape(npart*n_copies)
-    status = np.matlib.repmat(screen.status, 1, n_copies).reshape(npart*n_copies)
-    weight = np.matlib.repmat(screen.weight, 1, n_copies).reshape(npart*n_copies)
-    
-    theta = np.linspace(0,2*np.pi,npart+1)
-    theta = theta[:-1]
-    theta = np.matlib.repmat(theta, n_copies, 1).T.reshape(npart*n_copies)
-    
-    costh = np.cos(theta);
-    sinth = np.sin(theta);
-    
-    px_new = px*costh - py*sinth
-    py_new = px*sinth + py*costh
-    px = px_new
-    py = py_new
 
-    x_new = x*costh - y*sinth
-    y_new = x*sinth + y*costh
-    x = x_new
-    y = y_new
-    
-    weight = weight/n_copies
-    
-    data = dict(
-        species=species,
-        x=x,
-        y=y,
-        z=z,
-        px=px,
-        py=py,
-        pz=pz,
-        t=t,
-        status=status,
-        weight=weight
-    )
-    
+    data = {k: np.tile(screen[k], n_copies) for k in screen._settable_array_keys}
+    for k in screen._settable_scalar_keys:
+        data[k] = screen[k]
+
+    # Copy c of every particle is rotated by 2*pi*c/n_copies (copy 0 is the original)
+    theta = np.repeat(2*np.pi*np.arange(n_copies)/n_copies, npart)
+    costh = np.cos(theta)
+    sinth = np.sin(theta)
+
+    x, y, px, py = data['x'], data['y'], data['px'], data['py']
+    data['x'] = x*costh - y*sinth
+    data['y'] = x*sinth + y*costh
+    data['px'] = px*costh - py*sinth
+    data['py'] = px*sinth + py*costh
+
+    data['weight'] = data['weight']/n_copies
+
+    # Unique ids: copy c of particle id gets id + c*(max_id+1), so copy 0 keeps the original ids
+    ids = screen.id
+    data['id'] = np.tile(ids, n_copies) + np.repeat(np.arange(n_copies), npart)*(np.max(ids)+1)
+
     return ParticleGroupExtension(data=data)
-
-

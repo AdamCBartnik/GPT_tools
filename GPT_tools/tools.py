@@ -1,4 +1,4 @@
-import copy
+import copy, re
 import numpy as np
 import matplotlib as mpl
 from .nicer_units import nicer_array, SHORT_PREFIX_FACTOR
@@ -39,18 +39,52 @@ def make_default_plot(plot_width=700, plot_height=400, dpi = 120, is_table=False
     return (fig, ax)
 
 
+def replace_word(s, old, new):
+    # Replace old only where it is not part of a longer word (underscores and digits count as separators),
+    # so e.g. 'pr' in 'spread' or 'trans' in 'transverse' is left alone
+    return re.sub(r'(?<![A-Za-z])' + re.escape(old) + r'(?![A-Za-z])', lambda m: new, s)
+
+
+def nest_subscripts(s):
+    # Mathtext rejects chained subscripts like \sigma_p_x; nest them as \sigma_{p_{x}}, leaving braced groups alone
+    depth = 0
+    for i, ch in enumerate(s):
+        if (ch == '{'):
+            depth += 1
+        elif (ch == '}'):
+            depth -= 1
+        elif (ch == '_' and depth == 0):
+            rest = s[i+1:]
+            if (rest.startswith('{') and matching_brace(rest) == len(rest)-1):
+                return s  # already a single braced subscript
+            return s[:i] + '_{' + nest_subscripts(rest) + '}'
+    return s
+
+
+def matching_brace(s):
+    depth = 0
+    for i, ch in enumerate(s):
+        depth += (ch == '{') - (ch == '}')
+        if (depth == 0):
+            return i
+    return -1
+
+
 def format_label(s, latex=True, use_base=False, add_underscore=True):
     s = s.replace('mean_transverse_energy', 'MTE')
     if (use_base):
-        s = s.replace("mean_", "").replace("sigma_", "").replace("norm_", "").replace("sqrt_", "").replace("slice_", "")
+        s = s.replace("mean_", "").replace("sigma_", "").replace("norm_", "").replace("sqrt_", "").replace("root_", "").replace("slice_", "")
     if (add_underscore):
-        s = s.replace('px', 'p_x')
-        s = s.replace('py', 'p_y')
-        s = s.replace('pz', 'p_z')
-        s = s.replace('pr', 'p_r')
-        s = s.replace('ptrans', 'p_trans')
+        s = replace_word(s, 'px', 'p_x')
+        s = replace_word(s, 'py', 'p_y')
+        s = replace_word(s, 'pz', 'p_z')
+        s = replace_word(s, 'pr', 'p_r')
+        s = replace_word(s, 'ptrans', 'p_trans')
     if (latex):
-        s = s.replace('trans', r'\perp')
+        s = replace_word(s, 'transverse_energy', r'{E_\perp}')  # braces keep e.g. sigma_ from making a double subscript
+        s = replace_word(s, 'ptrans', r'p\perp')
+        s = replace_word(s, 'trans', r'\perp')
+        s = s.replace('core_emit', r'Core \epsilon')
         s = s.replace('sigma', r'\sigma')
         s = s.replace('theta', r'\theta')
         s = s.replace('slice_emit', r'Slice \epsilon')
@@ -63,7 +97,10 @@ def format_label(s, latex=True, use_base=False, add_underscore=True):
         s = s.replace('charge','charge')
     else:
         s = s.replace('$', '')
-        s = s.replace('trans', '⟂')
+        s = replace_word(s, 'transverse_energy', 'E⟂')
+        s = replace_word(s, 'ptrans', 'p⟂')
+        s = replace_word(s, 'trans', '⟂')
+        s = s.replace('core_emit', 'core ε')
         s = s.replace(r'\sigma','sigma')
         s = s.replace(r'\theta', 'theta')
         s = s.replace(r'\epsilon', 'emit')
@@ -81,7 +118,7 @@ def format_label(s, latex=True, use_base=False, add_underscore=True):
     s = s.replace('_centered', '')
     
     if (latex):
-        return '$'+s+'$'
+        return '$'+nest_subscripts(s)+'$'
     else:
         return s
 
@@ -143,6 +180,7 @@ def special_screens(z_input, decimals=6, min_length=10):
     z = np.sort(z_input)
     
     finished = False
+    n_passes = 0
     while (finished == False):
         if (z[0] == 0.0):
             z = np.delete(z, 0)
@@ -154,9 +192,15 @@ def special_screens(z_input, decimals=6, min_length=10):
         (values,indices,counts) = np.unique(dz.round(decimals=decimals), return_counts=True, return_inverse=True)
 
         while (len(values) > 1):
-            z_index = np.argmax(indices != np.argmax(counts))
-            if (z_index > 0):
-                z_index = z_index+1  # Assume the special screen is the former when the index is zero, otherwise it is the latter
+            regular_dz = values[np.argmax(counts)]
+            i = np.argmax(indices != np.argmax(counts))  # first irregular gap, between z[i] and z[i+1]
+
+            # The special screen is whichever neighbor of the gap leaves more regularly spaced gaps when removed
+            n_regular = [np.sum(np.diff(np.delete(z, j)).round(decimals=decimals) == regular_dz) for j in (i, i+1)]
+            if (n_regular[0] != n_regular[1]):
+                z_index = i if n_regular[0] > n_regular[1] else i+1
+            else:
+                z_index = i if i == 0 else i+1  # tie: assume the former at the start, otherwise the latter
             special_z += [z[z_index]]
             z = np.delete(z, z_index)
             dz = np.diff(z)
@@ -164,13 +208,13 @@ def special_screens(z_input, decimals=6, min_length=10):
 
         special_indices = [i for i, zz in enumerate(z_copy) if zz in special_z ]
         z_new = np.sort(copy.copy(z_copy)[special_indices])
-        if (len(z_new) < min_length):
+        n_passes += 1
+        if (len(z_new) < min_length or n_passes >= 50):
             finished = True
-        if (len(z_new) == len(z)):
-            if (np.all(z_new == z)):
-                finished = True
+        if (len(z_new) == len(z) and np.all(z_new == z)):
+            finished = True
         else:
-            z = z_new
+            z = z_new  # previously skipped when the lengths matched but the values differed, which never terminated
         
     special_indices = [i for i, zz in enumerate(z_copy) if zz in special_z ]
     
