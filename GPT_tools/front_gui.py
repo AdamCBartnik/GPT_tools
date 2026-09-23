@@ -287,7 +287,8 @@ class front_gui:
         pop = pop[self.not_nan_mask(pop)]
         pop_index = np.array(pop.index)
             
-        all_settings = pop.to_dict('index')[pop_index[which_point]]
+        # Look up by position: xopt_index is not unique in offspring files
+        all_settings = pop.iloc[which_point].to_dict()
         
         pop_filename = os.path.join(self.pop_directory, self.file_select.value[which_line])
         
@@ -386,7 +387,7 @@ class front_gui:
         pop = toolbox.select(pop, new_pop_size)
         index_list = np.array([int(p.index) for p in pop])
                 
-        return data.loc[data.index[index_list]]
+        return data.iloc[index_list]  # p.index is positional; labels may repeat
     
     def next_default_color(self):
         c = self.default_color_list[0]
