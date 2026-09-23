@@ -292,7 +292,8 @@ class front_gui:
         
         pop_filename = os.path.join(self.pop_directory, self.file_select.value[which_line])
         
-        wanted_keys = list({**self.xopt_file['vocs']['variables'], **self.xopt_file['vocs']['constants']}.keys())
+        constants = self.xopt_file['vocs'].get('constants') or {}
+        wanted_keys = list({**self.xopt_file['vocs']['variables'], **constants}.keys())
         if ('merit:min_mean_z' in all_settings.keys()):
             wanted_keys.append('merit:min_mean_z')
         
@@ -471,7 +472,7 @@ class front_gui:
                         new_pop = self.pop_sampler(new_pop, best_n)
             self.pop_list += [new_pop]
         
-        dropdown_items = self.params_from_xopt
+        dropdown_items = list(self.params_from_xopt)
         for pop in self.pop_list:
             dropdown_items += list(pop.columns[1:])
         
@@ -485,7 +486,7 @@ class front_gui:
             self.x_select.options = dropdown_items
             self.x_select.value = dropdown_items[0]
         
-        if (old_x in dropdown_items):
+        if (old_y in dropdown_items):
             self.y_select.options = dropdown_items
             self.y_select.value = old_y
         else:
@@ -519,15 +520,19 @@ class front_gui:
         
         self.ax.cla()  
         if (self.c_select.value != 'None'):
-            cmin = np.min([np.min(pop[self.c_select.value]*10**(-float(self.c_scale.value))) for pop in self.pop_list])
-            cmax = np.max([np.max(pop[self.c_select.value]*10**(-float(self.c_scale.value))) for pop in self.pop_list])
+            shown_pops = self.pop_list
+            if (not self.show_constraint_violators_checkbox.value):
+                shown_pops = [self.remove_constraint_violators(copy.copy(pop)) for pop in shown_pops]
+            shown_c = [pop[self.not_nan_mask(pop)][self.c_select.value]*10**(-float(self.c_scale.value)) for pop in shown_pops]
+            cmin = np.nanmin([np.nanmin(c) for c in shown_c if len(c) > 0])
+            cmax = np.nanmax([np.nanmax(c) for c in shown_c if len(c) > 0])
             if (cmin >= cmax*(1.0 - 1.0e-14)):  # What were we thinking?!
                 cmin = 0.9 * cmin
                 cmax = 1.1 * cmax
 
-            if (len(self.c_min.value) > 0):
+            if isfloat(self.c_min.value):
                 cmin = float(self.c_min.value)
-            if (len(self.c_max.value) > 0):
+            if isfloat(self.c_max.value):
                 cmax = float(self.c_max.value)
         sc = []
         pl = []
@@ -574,16 +579,16 @@ class front_gui:
                 pl.append(line_handle)
             
             if self.cheb_checkbox.value == True:
-                n1 = float(self.cheb_value.value)
-                n2 = float(self.cheb_value2.value)
+                n1 = self.cheb_value.value
+                n2 = self.cheb_value2.value
                                 
                 if isfloat(n1):
-                    n1_cheb = int(np.min([5, np.max([0, n1])]))
+                    n1_cheb = int(np.min([5, np.max([1, float(n1)])]))
                 else:
-                    n1_cheb = int(0)
+                    n1_cheb = int(1)  # numerator needs at least a constant term
                     
                 if isfloat(n2):
-                    n2_cheb = int(np.min([5, np.max([0, n2])]))
+                    n2_cheb = int(np.min([5, np.max([0, float(n2)])]))
                 else:
                     n2_cheb = int(0)
                 
@@ -599,10 +604,14 @@ class front_gui:
                 #p0b = p0b * 2.0**(-np.arange(0, n2_cheb))
                     
                 p0 = list(p0a) + list(p0b)
-                p0, cov = curve_fit(lambda xx,*aa: self.rat_poly(xx,n1_cheb,aa), x[not_nan]/x_scale, y[not_nan]/y_scale, p0=p0)        
-                x_cfit = np.linspace(np.min(x[not_nan]), np.max(x[not_nan]), 300)
-
-                line_handle, = self.ax.plot(x_cfit, y_scale*self.rat_poly(x_cfit/x_scale, n1_cheb, p0), '-', color=self.color_dict[pop_filename], label='Fit', zorder=ii_backwards) 
+                try:
+                    p0, cov = curve_fit(lambda xx,*aa: self.rat_poly(xx,n1_cheb,aa), x[not_nan]/x_scale, y[not_nan]/y_scale, p0=p0)
+                except (RuntimeError, TypeError, ValueError):
+                    p0 = None  # fit failed (no convergence or too few points); draw the data without it
+                
+                if p0 is not None:
+                    x_cfit = np.linspace(np.min(x[not_nan]), np.max(x[not_nan]), 300)
+                    line_handle, = self.ax.plot(x_cfit, y_scale*self.rat_poly(x_cfit/x_scale, n1_cheb, p0), '-', color=self.color_dict[pop_filename], label='Fit', zorder=ii_backwards) 
                         
         if (self.legend_checkbox.value):
             self.ax.legend()
@@ -631,14 +640,14 @@ class front_gui:
                 self.fig.canvas.mpl_disconnect(self.mouse_event_handler_2)
             self.snap_cursor = []
         
-        if (len(self.x_min.value) > 0):
+        if isfloat(self.x_min.value):
             self.ax.set_xlim(left=float(self.x_min.value))
-        if (len(self.x_max.value) > 0):
+        if isfloat(self.x_max.value):
             self.ax.set_xlim(right=float(self.x_max.value))
         
-        if (len(self.y_min.value) > 0):
+        if isfloat(self.y_min.value):
             self.ax.set_ylim(bottom=float(self.y_min.value))
-        if (len(self.y_max.value) > 0):
+        if isfloat(self.y_max.value):
             self.ax.set_ylim(top=float(self.y_max.value))
         
         if (len(self.x_label.value) == 0):
