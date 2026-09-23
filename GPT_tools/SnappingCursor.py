@@ -1,6 +1,8 @@
 
 import numpy as np
 from matplotlib.backend_bases import MouseButton
+from matplotlib.collections import PathCollection
+import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 
 class SnappingCursor:
@@ -9,14 +11,27 @@ class SnappingCursor:
     closest to the *x* position of the cursor.
 
     For simplicity, this assumes that *x* values of the data are sorted.
+
+    line_list may hold Line2D objects (from ax.plot) or PathCollections
+    (from ax.scatter); scatter points are highlighted in their own colormap color.
     """
     def __init__(self, fig, ax, line_list):
-        self.line_colors = [l.get_color() for l in line_list]
         self.ax = ax
         self.fig = fig
         self.canvas = self.fig.canvas
-        self.x = [l.get_data()[0] for l in line_list]
-        self.y = [l.get_data()[1] for l in line_list]
+        self.x = []
+        self.y = []
+        self.point_colors = []
+        for l in line_list:
+            if isinstance(l, PathCollection):
+                xy = np.asarray(l.get_offsets())
+                self.x.append(xy[:, 0])
+                self.y.append(xy[:, 1])
+                self.point_colors.append(l.to_rgba(l.get_array()))
+            else:
+                self.x.append(np.asarray(l.get_data()[0]))
+                self.y.append(np.asarray(l.get_data()[1]))
+                self.point_colors.append(np.tile(mcolors.to_rgba(l.get_color()), (len(self.x[-1]), 1)))
         self._last_index = None
         self.text = ax.text(0.5, 0.5, '', color='white', transform=ax.transAxes, bbox=dict(facecolor='white', alpha=0.7), horizontalalignment='left')
         self.circ = plt.Rectangle((np.nan,np.nan), 0.1, 0.1, facecolor='white', edgecolor='r', alpha = 0.5)
@@ -62,7 +77,8 @@ class SnappingCursor:
             self.circ.set_width(w)
             self.circ.set_height(h)
             self.circ.xy = (x-0.5*w, y-0.5*h)
-            self.circ.set_edgecolor(self.line_colors[which_line])
+            point_color = self.point_colors[which_line][index]
+            self.circ.set_edgecolor(point_color)
 
             xt = (x+1.5*w - xl[0])/(xl[1] - xl[0])
             yt = (y-0.5*h - yl[0])/(yl[1] - yl[0])
@@ -75,7 +91,9 @@ class SnappingCursor:
                 
             self.text.set_position((xt,yt))
             self.text.set_text(f'({x:.3g}, {y:.3g})')
-            self.text.set_bbox(dict(edgecolor=self.line_colors[which_line], facecolor=self.line_colors[which_line], alpha=0.7))
+            self.text.set_bbox(dict(edgecolor=point_color, facecolor=point_color, alpha=0.7))
+            r, g, b = point_color[:3]
+            self.text.set_color('black' if (0.299*r + 0.587*g + 0.114*b) > 0.6 else 'white')  # stay readable on light colors
 
             self.pos = [x, y]
             self.data_index = index

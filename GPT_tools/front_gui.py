@@ -5,12 +5,22 @@ import glob, os, yaml, copy
 import pandas as pd
 import numpy as np
 from GPT_tools.SnappingCursor import SnappingCursor
-import time
+import time, functools, inspect, traceback
 from GPT_tools.GPTExtension import run_gpt_with_settings
 from fastnumbers import isfloat
 from xopt.generators.ga.cnsga import cnsga_toolbox, pop_from_data
 from xopt import Xopt
 from scipy.optimize import curve_fit
+
+def show_errors(method):
+    # Widget and plot callbacks swallow exceptions silently in Jupyter, so report them in the settings box
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        try:
+            return method(self, *args, **kwargs)
+        except Exception as e:
+            self.settings_box.value = f'Error in {method.__name__}: {type(e).__name__}: {e}\n\n{traceback.format_exc()}'
+    return wrapper
 
 class front_gui:
     def __init__(self, xopt_file, pop_directory):
@@ -274,6 +284,7 @@ class front_gui:
         
         self.wildcard_str.observe(self.refresh_files_load_and_plot_on_value_change, names='value')
         
+    @show_errors
     def on_click(self, event):
                 
         which_line = self.snap_cursor.which_line
@@ -321,7 +332,10 @@ class front_gui:
         
     
     def not_nan_mask(self, pop):
-        return np.logical_not(np.isnan(pop[self.x_select.value]) | np.isnan(pop[self.y_select.value])).to_numpy()
+        is_nan = np.isnan(pop[self.x_select.value]) | np.isnan(pop[self.y_select.value])
+        if (self.c_select.value != 'None'):
+            is_nan = is_nan | np.isnan(pop[self.c_select.value])
+        return np.logical_not(is_nan).to_numpy()
     
     def reset_units(self, owner):
         if (owner == self.x_select):
@@ -436,6 +450,7 @@ class front_gui:
         return pop_df
         
     # SIRS = Selected Individuals for ReSubmission
+    @show_errors
     def save_best_of_SIRS(self, click):
         pop_filenames = list(self.file_select.value)
         
@@ -616,8 +631,8 @@ class front_gui:
         if (self.legend_checkbox.value):
             self.ax.legend()
         
-        if (len(pl)>0):
-            snap_cursor = SnappingCursor(self.fig, self.ax, pl)
+        if (len(pl)>0 or len(sc)>0):
+            snap_cursor = SnappingCursor(self.fig, self.ax, pl + sc)
             self.mouse_event_handler_1 = self.fig.canvas.mpl_connect('motion_notify_event', snap_cursor.on_mouse_move)
             self.mouse_event_handler_2 = self.fig.canvas.mpl_connect('button_press_event', self.on_click)
             self.snap_cursor = snap_cursor
@@ -633,12 +648,6 @@ class front_gui:
             if (len(self.c_units.value)>0):
                 clabel_str += f' ({self.c_units.value})'
             self.colorbar_instance.set_label(clabel_str)
-            
-            if (self.mouse_event_handler_1 is not None):
-                self.fig.canvas.mpl_disconnect(self.mouse_event_handler_1)
-            if (self.mouse_event_handler_2 is not None):
-                self.fig.canvas.mpl_disconnect(self.mouse_event_handler_2)
-            self.snap_cursor = []
         
         if isfloat(self.x_min.value):
             self.ax.set_xlim(left=float(self.x_min.value))
@@ -669,47 +678,47 @@ class front_gui:
         self.ax.set_xlabel(xlabel_str)
         self.ax.set_ylabel(ylabel_str)
                 
+    @show_errors
     def reset_units_and_plot_on_value_change(self, change):
         self.reset_units(change['owner'])
         self.make_plot()
         
+    @show_errors
     def plot_on_value_change(self, change):
         self.make_plot()
         
+    @show_errors
     def refresh_files_load_and_plot_on_value_change(self, change):
         self.put_file_list_in_widgets()
         self.load_and_plot_on_value_change(change)
         
+    @show_errors
     def load_and_plot_on_value_change(self, change):
         self.load_files()
         self.update_active_file_list()
         self.update_active_file_params()
         self.make_plot()
         
+    @show_errors
     def active_file_change(self, change):
         self.update_active_file_params()
         self.make_plot()
 
+    @show_errors
     def active_color_change(self, change):
         self.color_dict[self.active_file.value] = self.active_color.value
         self.make_plot()
         
+    @show_errors
     def legend_str_change(self, change):
         self.legend_dict[self.active_file.value] = self.legend_str.value
         self.make_plot()
         
+    @show_errors
     def run_gpt(self, click):
         self.settings_box.value = 'Running...'
-        self.gpt_data = run_gpt_with_settings(copy.copy(self.run_settings),
-                                 gpt_input_file=self.gpt_input_file,
-                                 distgen_input_file=self.distgen_input_file,
-                                 verbose=False,
-                                 gpt_verbose=False,
-                                 auto_phase=False,
-                                 timeout=100000)
+        self.gpt_data = run_gpt_with_settings(copy.copy(self.run_settings), **self.run_kwargs())
         self.ran_settings = copy.copy(self.gpt_data.input['variables'])
-
-        self.settings_box.value = 'Got to here.'
         
         if (self.save_run_checkbox.value == True):
             file_to_save = os.path.join(self.pop_directory, time.strftime("gptdata-%Y_%m_%d-%H_%M_%S.h5"))
@@ -718,11 +727,22 @@ class front_gui:
         else:
             self.settings_box.value = 'Finished running.'
         
+    def run_kwargs(self):
+        # Use the evaluator's options from the xopt file (auto_phase, timeout, gpt_bin, ...) so a rerun
+        # matches the optimizer; drop options that only the evaluate_* wrappers accept
+        function_kwargs = self.xopt_file['evaluator'].get('function_kwargs') or {}
+        accepted = inspect.signature(run_gpt_with_settings).parameters
+        kwargs = {k: v for k, v in function_kwargs.items() if k in accepted and k != 'settings'}
+        kwargs.update(verbose=False, gpt_verbose=False)  # printed output from a button callback is not shown
+        return kwargs
+        
+    @show_errors
     def show_settings(self, change):
         self.settings_value.unobserve_all(name='value')
         self.settings_value.value = str(self.run_settings[self.settings_menu.value])
         self.settings_value.observe(self.edit_settings_to_run, names = 'value')
         
+    @show_errors
     def edit_settings_to_run(self, change):
         if type(self.settings[self.settings_menu.value]) is not str:
             if isfloat(self.settings_value.value):
