@@ -6,13 +6,15 @@ import numpy.polynomial.polynomial as poly
 import numpy as np
 import copy
 
+trapezoid = getattr(np, 'trapezoid', None) or np.trapz  # np.trapz was renamed in NumPy 2.0 and later removed
+
 class ParticleGroupExtension(ParticleGroup):
     
     def __init__(self, input_particle_group=None, data=None):
         self.n_slices = 50
         self.slice_key = 't'
         
-        if (input_particle_group):
+        if (input_particle_group is not None):  # an empty ParticleGroup is falsy
             data={}
             for key in input_particle_group._settable_keys:
                 data[key] = copy.copy(input_particle_group[key])  # is deepcopy needed?
@@ -96,17 +98,18 @@ class ParticleGroupExtension(ParticleGroup):
     def energy_spread_fraction(self):
         return self['sigma_energy']/self['mean_kinetic_energy']
     
+    # Core emittances use px/mc (not xp) so they are normalized, like norm_emit_x
     @property
     def core_emit_x(self):
-        return core_emit_calc(self.x, self.xp, self.weight)
-    
+        return core_emit_calc(self.x, self.px/self.mass, self.weight)
+
     @property
     def core_emit_y(self):
-        return core_emit_calc(self.y, self.yp, self.weight)
-    
+        return core_emit_calc(self.y, self.py/self.mass, self.weight)
+
     @property
     def core_emit_4d(self):
-        return core_emit_calc_4d(self.x, self.xp, self.y, self.yp, self.weight)
+        return core_emit_calc_4d(self.x, self.px/self.mass, self.y, self.py/self.mass, self.weight)
         
     @property
     def sqrt_norm_emit_4d(self):
@@ -151,8 +154,11 @@ class ParticleGroupExtension(ParticleGroup):
         gamma = sig[1,1] / emit
         return 0.5*(gamma*self.y*self.y + 2.0*alpha*self.y*self.yp + beta*self.yp*self.yp)
         
-    @property
-    def crazy_action_x(self):
+    def normal_mode_actions(self):
+        """
+        Per-particle normalized actions (Ju, Jv) of the two 4D (x, xp, y, yp) normal modes.
+        For an uncoupled beam these reduce to action_x and action_y.
+        """
         sig = self.cov('x', 'xp', 'y', 'yp')
         S = np.array([[0, 1, 0, 0],[-1,0,0,0],[0,0,0,1],[0,0,-1,0]])
         Q = np.array([[1, 1j, 0, 0], [1, -1j, 0, 0], [0, 0, 1, 1j], [0, 0, 1, -1j]]) / np.sqrt(2.0)
@@ -160,39 +166,24 @@ class ParticleGroupExtension(ParticleGroup):
         E = E / np.power(np.abs(np.linalg.det(E)), 0.25)
         E = E[:,[1,0,3,2]] # reorder to make N symplectic
         N = E.dot(Q)
-        N = N.real 
-        x = np.array([self.x,self.xp, self.y, self.yp])
-        x_new = np.linalg.solve(N, x)
-        return 0.5*(x_new[0,:]**2 + x_new[1,:]**2)*(self.gamma*self.beta)
-    
-    @property
-    def crazy_action_y(self):
-        sig = self.cov('x', 'xp', 'y', 'yp')
-        S = np.array([[0, 1, 0, 0],[-1,0,0,0],[0,0,0,1],[0,0,-1,0]])
-        Q = np.array([[1, 1j, 0, 0], [1, -1j, 0, 0], [0, 0, 1, 1j], [0, 0, 1, -1j]]) / np.sqrt(2.0)
-        (w, E) = np.linalg.eig(sig.dot(S))
-        E = E / np.power(np.abs(np.linalg.det(E)), 0.25)
-        E = E[:,[1,0,3,2]] # reorder to make N symplectic
-        N = E.dot(Q)
-        N = N.real 
-        x = np.array([self.x,self.xp, self.y, self.yp])
-        x_new = np.linalg.solve(N, x)
-        return 0.5*(x_new[2,:]**2 + x_new[3,:]**2)*(self.gamma*self.beta)
-    
-    @property
-    def action_4d(self):
-        sig = self.cov('x', 'xp', 'y', 'yp')
-        S = np.array([[0, 1, 0, 0],[-1,0,0,0],[0,0,0,1],[0,0,-1,0]])
-        Q = np.array([[1, 1j, 0, 0], [1, -1j, 0, 0], [0, 0, 1, 1j], [0, 0, 1, -1j]]) / np.sqrt(2.0)
-        (w, E) = np.linalg.eig(sig.dot(S))
-        E = E / np.power(np.abs(np.linalg.det(E)), 0.25)
-        E = E[:,[1,0,3,2]] # reorder to make N symplectic
-        N = E.dot(Q)
-        N = N.real 
+        N = N.real
         x = np.array([self.x,self.xp, self.y, self.yp])
         x_new = np.linalg.solve(N, x)
         Ju = 0.5*(x_new[0,:]**2 + x_new[1,:]**2)*(self.gamma*self.beta)
         Jv = 0.5*(x_new[2,:]**2 + x_new[3,:]**2)*(self.gamma*self.beta)
+        return Ju, Jv
+
+    @property
+    def crazy_action_x(self):
+        return self.normal_mode_actions()[0]
+
+    @property
+    def crazy_action_y(self):
+        return self.normal_mode_actions()[1]
+
+    @property
+    def action_4d(self):
+        Ju, Jv = self.normal_mode_actions()
         return np.sqrt(Ju*Jv)
 
 #-----------------------------------------
@@ -234,13 +225,13 @@ def divide_particles(particle_group, nbins = 100, key='t'):
     if (is_radial_var):
         x = x*x
         xmin = 0  # force r=0 as min, could use min(x) here, optionally
-        xmax = max(x)
+        xmax = np.max(x)
         dx = (xmax-xmin)/(nbins-1)
         edges = np.linspace(xmin, xmax + 0.01*dx, nbins+1) # extends slightly further than max(r2)
         dx = edges[1]-edges[0]
     else:
-        dx = (max(x)-min(x))/(nbins-1)
-        edges = np.linspace(min(x) - 0.01*dx, max(x) + 0.01*dx, nbins+1) # extends slightly further than range(r2)
+        dx = (np.max(x)-np.min(x))/(nbins-1)
+        edges = np.linspace(np.min(x) - 0.01*dx, np.max(x) + 0.01*dx, nbins+1) # extends slightly further than range(r2)
         dx = edges[1]-edges[0]
     
     which_bins = np.digitize(x, edges)-1
@@ -329,12 +320,14 @@ def core_emit_calc(x, xp, w, show_fit=False):
     u0 = np.vstack((x, xp))
     sigma_matrix = np.cov(u0, aweights=w)
             
-    if (np.sqrt(np.linalg.det(sigma_matrix)) < 1e-11):
+    # Relative test so it works in any units (geometric, normalized, ...): emittance vs. the uncorrelated sigma_x*sigma_xp.
+    # Roundoff in det is ~1e-8 relative after the sqrt (and can make det slightly negative), so the threshold sits above that.
+    if (np.sqrt(max(np.linalg.det(sigma_matrix), 0.0)) < 1e-6 * np.sqrt(sigma_matrix[0,0] * sigma_matrix[1,1])):
         print('Possible zero emittance found, assuming core emittance is zero.')
         return 0
 
     # Change into better (round phase space) coordinates
-    (_, V) = np.linalg.eig(sigma_matrix)
+    (_, V) = np.linalg.eigh(sigma_matrix)
     u1 = np.linalg.solve(V, u0)
 
     # Now get the sigma matrix in the new coordinates
@@ -348,7 +341,7 @@ def core_emit_calc(x, xp, w, show_fit=False):
     rhor = np.histogram(r, bins=rbin)[0]
         
     rbin = rbin[0:-1] + 0.5*(rbin[1] - rbin[0])
-    rhonorm = np.trapz(rhor, rbin)
+    rhonorm = trapezoid(rhor, rbin)
     
     rho = rhor / (rbin * rhonorm * 2 * np.pi * np.sqrt(np.prod(np.diag(sigma_matrix))));
             
@@ -379,7 +372,7 @@ def core_emit_calc(x, xp, w, show_fit=False):
                                 
         plt.xlim([0, np.max(rbin_fit)])
         plt.ylim([0, 1.1*np.max(core_eps)])
-        plt.xlabel('Normalized radius^2');
+        plt.xlabel('Normalized radius');
         plt.ylabel('Emittance');
         plt.legend(p_list, leg_list)
     
