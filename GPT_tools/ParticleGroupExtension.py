@@ -6,8 +6,6 @@ import numpy.polynomial.polynomial as poly
 import numpy as np
 import copy
 
-trapezoid = getattr(np, 'trapezoid', None) or np.trapz  # np.trapz was renamed in NumPy 2.0 and later removed
-
 class ParticleGroupExtension(ParticleGroup):
     
     def __init__(self, input_particle_group=None, data=None):
@@ -326,56 +324,50 @@ def core_emit_calc(x, xp, w, show_fit=False):
         print('Possible zero emittance found, assuming core emittance is zero.')
         return 0
 
-    # Change into better (round phase space) coordinates
-    (_, V) = np.linalg.eigh(sigma_matrix)
-    u1 = np.linalg.solve(V, u0)
+    # Whiten to round phase space (unit covariance); phase-space areas shrink by sqrt(det(sigma))
+    L = np.linalg.cholesky(sigma_matrix)
+    u1 = np.linalg.solve(L, u0)
+    r2 = np.sum(u1*u1, axis=0)
 
-    # Now get the sigma matrix in the new coordinates
-    sigma_matrix = np.cov(u1, aweights=w)
-    
-    r = np.sqrt(np.array([1.0/np.diag(sigma_matrix)]).dot(u1**2))[0]    
-    dr = np.sort(r)[average_count_per_bin-1] # first dr includes exactly average_count_per_bin particles
-    
-    rbin = np.arange(0, np.max(r), dr)
-    
-    rhor = np.histogram(r, bins=rbin)[0]
-        
-    rbin = rbin[0:-1] + 0.5*(rbin[1] - rbin[0])
-    rhonorm = trapezoid(rhor, rbin)
-    
-    rho = rhor / (rbin * rhonorm * 2 * np.pi * np.sqrt(np.prod(np.diag(sigma_matrix))));
-            
-    emit_in_range = rho > np.max(rho) / emit_change_factor
-    max_fit_r = np.max(rbin[emit_in_range])
-    plot_range = rbin < max_fit_r
-    
-    core_eps = 1.0/(4.0 * np.pi * rho[plot_range])
-    rbin_fit = rbin[plot_range]   
-        
-    best_fit = poly.polyfit(rbin_fit, core_eps, 2);
-    
-    ec = best_fit[0]
-    
+    # Equal-area bins (equal width in r^2), so every bin near the center expects the same number of particles
+    dr2 = np.sort(r2)[average_count_per_bin-1] # first bin includes exactly average_count_per_bin particles
+    edges = np.arange(0, np.max(r2) + dr2, dr2)
+    r2bin = 0.5*(edges[1:] + edges[:-1])
+    counts = np.histogram(r2, bins=edges)[0]
+
+    rho = np.histogram(r2, bins=edges, weights=w)[0] / (np.sum(w) * np.pi * dr2)  # whitened-space density
+    rho = rho / np.sqrt(np.linalg.det(sigma_matrix))                                # physical density
+
+    fit_range = (rho > np.max(rho) / emit_change_factor) & (counts > 0)
+
+    # A smooth density depends on r^2 near the center, and log(rho) is exactly linear in r^2 for a Gaussian.
+    # Weight by sqrt(counts): the Poisson error of log(counts) is 1/sqrt(counts).
+    deg = int(min(2, np.sum(fit_range) - 1))
+    best_fit = poly.polyfit(r2bin[fit_range], np.log(rho[fit_range]), deg, w=np.sqrt(counts[fit_range]))
+
+    rho0 = np.exp(best_fit[0])
+    ec = 1.0/(4.0 * np.pi * rho0)
+
     if (show_fit):
         plt.figure()
         p_list = []
         leg_list = []
-        
-        line_handle, = plt.plot(rbin[plot_range], core_eps, 'o')
+
+        # Plot as a local emittance 1/(4 pi rho) so the r^2 -> 0 intercept is the core emittance
+        local_eps = 1.0/(4.0 * np.pi * rho[fit_range])
+        line_handle, = plt.plot(r2bin[fit_range], local_eps, 'o')
         p_list.append(line_handle)
         leg_list.append('Data')
-        
-        r_plot = np.linspace(0, np.max(rbin_fit), 300)
-        line_handle, = plt.plot(r_plot, poly.polyval(r_plot, best_fit), '-')
+
+        r2_plot = np.linspace(0, np.max(r2bin[fit_range]), 300)
+        line_handle, = plt.plot(r2_plot, 1.0/(4.0 * np.pi * np.exp(poly.polyval(r2_plot, best_fit))), '-')
         p_list.append(line_handle)
         leg_list.append('Fit')
-                                
-        plt.xlim([0, np.max(rbin_fit)])
-        plt.ylim([0, 1.1*np.max(core_eps)])
-        plt.xlabel('Normalized radius');
+
+        plt.xlim([0, np.max(r2bin[fit_range])])
+        plt.ylim([0, 1.1*np.max(local_eps)])
+        plt.xlabel('Normalized radius^2');
         plt.ylabel('Emittance');
         plt.legend(p_list, leg_list)
-    
-        
-    
+
     return ec

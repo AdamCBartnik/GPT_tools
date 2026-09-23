@@ -1,6 +1,4 @@
 import numpy as np
-import copy
-from scipy.spatial import ConvexHull
 import matplotlib.pyplot as plt
 from scipy.optimize import fmin
 from scipy.interpolate import PchipInterpolator
@@ -12,8 +10,6 @@ def emittance_vs_fraction(pg, var, number_of_points=25, plotting=True, verbose=F
     # pg:   Input ParticleGroup
     # var:  'x' or 'y'
     
-    pg = copy.deepcopy(pg)
-        
     var1 = var
     var2 = 'p' + var
     
@@ -31,15 +27,6 @@ def emittance_vs_fraction(pg, var, number_of_points=25, plotting=True, verbose=F
     twiss_parameters = np.array([alpha, beta, center_x, center_y])
     twiss_scales = np.abs(np.array([alpha, beta, np.max([1.0e-6, np.abs(center_x)]), np.max([1.0e-6, np.abs(center_y)])]))  # scale of each fit parameter, helps simplex dimensions all be similar
     normed_twiss_parameters = twiss_parameters/twiss_scales
-                                
-    aa = np.empty(len(fs))
-    bb = np.empty(len(fs))
-    cx = np.empty(len(fs))
-    cp = np.empty(len(fs))
-    aa[:] = np.nan
-    bb[:] = np.nan
-    cx[:] = np.nan
-    cp[:] = np.nan
     
     # Computation of emittance vs. fractions
     
@@ -52,17 +39,13 @@ def emittance_vs_fraction(pg, var, number_of_points=25, plotting=True, verbose=F
        print('')
        print('   computing emittance vs. fraction curve...') 
         
-    indices = np.arange(len(es)-2,1,-1)
+    indices = np.arange(len(es)-2,0,-1)  # every fraction except f=0 (emittance 0) and f=1 (full rms emittance)
     for ind, ii in enumerate(indices):
         # use previous ellipse as a guess point to compute next one:
         twiss_parameter_guess = normed_twiss_parameters
         
         normed_twiss_parameters = fmin(lambda xx: get_emit_at_frac(fs[ii],xx*twiss_scales,x,y,w), twiss_parameter_guess, args=(), maxiter=None, disp=verbose)  # xtol=0.01, ftol=1, 
         es[ii] = get_emit_at_frac(fs[ii],normed_twiss_parameters*twiss_scales,x,y,w)
-        aa[ii] = normed_twiss_parameters[0]*twiss_scales[0]
-        bb[ii] = normed_twiss_parameters[1]*twiss_scales[1]
-        cx[ii] = normed_twiss_parameters[2]*twiss_scales[2]
-        cp[ii] = normed_twiss_parameters[3]*twiss_scales[3]
             
     if verbose:
         print('   ...done.')
@@ -79,9 +62,6 @@ def emittance_vs_fraction(pg, var, number_of_points=25, plotting=True, verbose=F
         print('done.')
             
     fc = np.interp(ec,es,fs)    
-    ac = np.interp(fc,fs,aa)
-    bc = np.interp(fc,fs,bb)
-    gc = (1.0+ac**2)/bc
         
     # Plot results
 
@@ -117,9 +97,9 @@ def emittance_vs_fraction(pg, var, number_of_points=25, plotting=True, verbose=F
         plt.xlabel('Fraction')
         plt.ylabel(f'Emittance ({emit_units})')
 
-        title_str = f'$\epsilon_{{core}}$ = {ec_plot:.3g} {emit_units}, $f_{{core}}$ = {fc:.3f}'
+        title_str = rf'$\epsilon_{{core}}$ = {ec_plot:.3g} {emit_units}, $f_{{core}}$ = {fc:.3f}'
         if (title_fraction):
-            title_str = title_str + f', $\epsilon_{{{title_fraction}}}$ = {pchip(title_fraction):.3g} {emit_units}'   # np.interp(title_fraction, fs, es)
+            title_str = title_str + rf', $\epsilon_{{{title_fraction}}}$ = {pchip(title_fraction):.3g} {emit_units}'   # np.interp(title_fraction, fs, es)
         plt.title(title_str)
         
         if verbose:
@@ -159,94 +139,19 @@ def get_emit_at_frac(f_target, twiss_parameters, x, y, w):
     # compute and compare single particle emittances to emittance from Twiss parameters
     gamma=(1.0+alpha**2)/beta
     e_particles = 0.5*(gamma*dx**2 + beta*dy**2 + 2.0*alpha*dx*dy)
-    e_particles = np.sort(e_particles)
     
-    idx_target = int(np.floor(f_target * len(e_particles)))
-    frac_emit = np.sum(e_particles[0:idx_target])/(idx_target+1.0)
+    # Mean single-particle emittance of the innermost fraction f_target (by weight). Minimizing this over
+    # the Twiss parameters gives the smallest rms emittance of any subset holding that fraction.
+    if np.all(w == w[0]):
+        idx_target = int(np.floor(f_target * len(e_particles)))
+        if (idx_target == 0):
+            return 0.0
+        return np.mean(np.partition(e_particles, idx_target-1)[:idx_target])  # partial sort is enough
     
-    return frac_emit
-    
-            
-
-# This function is no longer used, alas
-def minboundellipse( x_all, y_all, tolerance=1.0e-3, plot_on=False):
-
-    # x_all and y_all are rows of points
-
-    # reduce set of points to just the convex hull of the input
-    ch = ConvexHull(np.array([x_all,y_all]).transpose())
-    
-    x = x_all[ch.vertices]
-    y = y_all[ch.vertices]
-
-    d = 2
-    N = len(x)
-    P = np.array([x, y])
-    Q = np.array([x, y, np.ones(N)])
-
-    # Initialize
-    count = 1
-    err = 1
-    u = (1.0/N) * np.array([np.ones(N)]).transpose()
-
-    # Khachiyan Algorithm
-    while (err > tolerance):
-        X = Q @ np.diag(u.reshape(len(u))) @ Q.transpose()        
-        M = np.diag(Q.transpose() @ np.linalg.solve(X, Q))
-
-        j = np.argmax(M)
-        maximum = M[j]
-        step_size = (maximum-d-1.0)/((d+1.0)*(maximum-1.0))
-
-        new_u = (1.0 - step_size)*u
-        new_u[j] = new_u[j] + step_size
-
-        err = np.linalg.norm(new_u - u)
-
-        count = count + 1
-        u = new_u
-
-    U = np.diag(u.reshape(len(u)))
-
-    # Compute the twiss parameters    
-    A = (1.0/d) * np.linalg.inv(P @ U @ P.transpose() - (P @ u) @ (P @ u).transpose() )
-
-    (U, D, V) = np.linalg.svd(A)
-    
-    a = 1/np.sqrt(D[0]) # major axis
-    b = 1/np.sqrt(D[1]) # minor axis
-
-    # make sure V gives pure rotation
-    if (np.linalg.det(V) < 0):
-        V = V @ np.array([[-1, 0], [0, 1]])
-
-    emittance = a*b
-
-    gamma = A[0,0]*emittance;
-    beta = A[1,1]*emittance;
-    alpha = A[1,0]*emittance;
-
-    # And the center
-    c = P @ u
-    center = np.reshape(c, len(c))
-
-    if (plot_on):
-
-        plt.figure(dpi=100)
-
-        theta = np.linspace(0,2*np.pi,100)
-
-        state = np.array([a*np.cos(theta), b*np.sin(theta)])
-
-        X = V @ state
-        X[0,:] = X[0,:] + c[0]
-        X[1,:] = X[1,:] + c[1]
-
-        plt.plot(X[0,:], X[1,:], 'r-')
-        plt.plot(c[0], c[1], 'r*')
-        plt.plot(x_all, y_all, 'b.')
-                
-    
-    return (emittance, alpha, beta, center, gamma)
-    
-             
+    order = np.argsort(e_particles)
+    cum_w = np.cumsum(w[order])
+    idx_target = int(np.searchsorted(cum_w, f_target * cum_w[-1]))
+    if (idx_target == 0):
+        return 0.0
+    inner = order[:idx_target]
+    return np.sum(e_particles[inner]*w[inner])/np.sum(w[inner])
