@@ -487,10 +487,18 @@ class front_gui:
                         new_pop = self.pop_sampler(new_pop, best_n)
             self.pop_list += [new_pop]
         
-        dropdown_items = list(self.params_from_xopt)
+        # Offer only names that exist in the loaded files: an xopt objective that is neither an output nor a
+        # variable (e.g. an input left out of vocs.variables) is never written, and xopt silently treats it as inf
+        present = set().union(*[set(pop.columns) for pop in self.pop_list])
+        missing = [p for p in self.params_from_xopt if p not in present]
+        if (len(missing) > 0):
+            self.settings_box.value = (f'Not found in the loaded file(s), so not plottable: {", ".join(missing)}\n'
+                                       'An objective or constraint on an input only works if that input is listed in vocs.variables.')
+
+        dropdown_items = [p for p in self.params_from_xopt if p in present]
         for pop in self.pop_list:
-            dropdown_items += list(pop.columns[1:])
-        
+            dropdown_items += list(pop.columns)  # xopt_index is the index, so every column is data
+
         dropdown_items = list(dict.fromkeys(dropdown_items)) # remove duplicates
         
         if (old_x in dropdown_items):
