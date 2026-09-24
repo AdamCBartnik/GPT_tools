@@ -6,7 +6,7 @@ generator:
     output_path: ./
     #population_file: /nfs/acc/temp/mk2533/LANL/opt2/tmp/cnsga_population_2023-12-13T10:35:21.763079-05:00.csv
 evaluator:
-    function: GPT_tools.GPTExtension.evaluate_run_gpt_with_particlegroup  # evaluate_gpt_with_stability, evaluate_run_gpt_with_particlegroup 
+    function: GPT_tools.GPTExtension.evaluate_run_gpt_with_settings
     function_kwargs:
         distgen_input_file: /nfs/acc/temp/mk2533/LANL/gpt/distgen.in.yaml
         gpt_input_file: /nfs/acc/temp/mk2533/LANL/gpt/topgun_maverick.in
