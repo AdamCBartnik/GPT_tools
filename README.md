@@ -8,7 +8,7 @@ Plotting, analysis, and orchestration tools for [lume-gpt](https://github.com/Co
 - A `ParticleGroup` subclass with extra beam-physics quantities — emittances, actions, slice properties (`ParticleGroupExtension.py`).
 - Interactive Jupyter plotting and GUIs for inspecting simulation output (`gpt_plot.py`, `gpt_plot_gui.py`).
 - Standalone physics models for cathode/tip emission, image-charge effects, Compton scattering, and THz-based bunch manipulation.
-- A GUI for inspecting and re-running `xopt` optimization populations (`front_gui.py`).
+- Tools for inspecting and re-running `xopt` optimization populations (`front_tools.py`, `front_gui.py`).
 
 ## Typical workflow
 
@@ -24,7 +24,7 @@ settings dict ──► run_gpt_with_settings() ──► GPT object (ParticleGr
                                     evaluate_run_gpt_with_settings() ──► xopt optimization
                                                        │
                                                        ▼
-                                          front_gui() (inspect results)
+                                          front_gui() / show_fronts() (inspect results)
 ```
 
 ## Installation
@@ -96,6 +96,7 @@ See [`examples/`](examples/) for complete, runnable notebooks.
 **Optimization (`xopt`)**
 | Module | Purpose |
 |---|---|
+| `front_tools.py` | Functions for inspecting `xopt` optimization populations and Pareto fronts (`show_fronts`, `find_settings`, `reevaluate_population`, ...). |
 | `front_gui.py` | Interactive GUI for `xopt` populations — load population files, plot fronts, inspect/re-run individual points. |
 
 **Physics models**
