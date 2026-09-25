@@ -24,7 +24,7 @@ settings dict ──► run_gpt_with_settings() ──► GPT object (ParticleGr
                                     evaluate_run_gpt_with_settings() ──► xopt optimization
                                                        │
                                                        ▼
-                                          front_gui() / show_fronts() (inspect results)
+                                          front_gui() (inspect results)
 ```
 
 ## Installation
@@ -96,7 +96,7 @@ See [`examples/`](examples/) for complete, runnable notebooks.
 **Optimization (`xopt`)**
 | Module | Purpose |
 |---|---|
-| `front_tools.py` | Functions for inspecting `xopt` optimization populations and Pareto fronts (`show_fronts`, `find_settings`, `reevaluate_population`, ...). |
+| `front_tools.py` | Population-file utilities: `clamp_population` (make a population file consistent with an edited xopt file) and `reevaluate_population` (re-run a population in parallel). |
 | `front_gui.py` | Interactive GUI for `xopt` populations — load population files, plot fronts, inspect/re-run individual points. |
 
 **Physics models**
