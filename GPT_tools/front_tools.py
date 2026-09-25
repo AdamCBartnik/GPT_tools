@@ -6,6 +6,8 @@ import multiprocessing as mp
 from concurrent.futures import ProcessPoolExecutor
 from xopt import Xopt, VOCS
 from xopt.generators.ga.cnsga import cnsga_toolbox, pop_from_data
+from deap.tools import sortNondominated
+from deap.tools.emo import assignCrowdingDist
 
 
 def load_vocs(xopt_file):
@@ -16,11 +18,26 @@ def load_vocs(xopt_file):
 
 
 def pop_sampler(data, vocs, new_pop_size):
-    # Best new_pop_size individuals by CNSGA selection (objectives and constraints), as front_gui's "best N"
-    toolbox = cnsga_toolbox(vocs)
+    """
+    Best new_pop_size individuals by CNSGA's NSGA-II selection (same non-dominated sorting, constraint handling
+    and crowding distance as xopt), with one change for better spread: when the last front has to be thinned,
+    points are removed one at a time (most crowded first) and crowding distances are recomputed after each
+    removal, instead of dropping all low-crowding points at once (which can leave holes where the front is dense).
+    Identical to xopt's selection whenever no thinning, or only one removal, is needed.
+    """
+    if (new_pop_size >= len(data)):
+        return data
+    cnsga_toolbox(vocs)  # creates the (constrained) fitness classes used by pop_from_data
     pop = pop_from_data(data, vocs)
-    pop = toolbox.select(pop, new_pop_size)
-    return data.iloc[[int(p.index) for p in pop]]  # p.index is positional; xopt_index labels may repeat
+    fronts = sortNondominated(pop, new_pop_size)
+    chosen = [ind for front in fronts[:-1] for ind in front]
+    last_front = list(fronts[-1])
+    while (len(chosen) + len(last_front) > new_pop_size):
+        assignCrowdingDist(last_front)
+        crowding = np.array([ind.fitness.crowding_dist for ind in last_front])
+        last_front.pop(int(np.flatnonzero(crowding == crowding.min())[-1]))  # on ties drop the later one, as xopt's sort does
+    chosen += last_front
+    return data.iloc[[int(p.index) for p in chosen]]  # p.index is positional; xopt_index labels may repeat
 
 
 def random_variable_values(variable, n, rng):

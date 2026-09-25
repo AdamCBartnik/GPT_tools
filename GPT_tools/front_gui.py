@@ -8,8 +8,7 @@ from GPT_tools.SnappingCursor import SnappingCursor
 import time, functools, inspect, traceback
 from GPT_tools.GPTExtension import run_gpt_with_settings
 from fastnumbers import isfloat
-from xopt.generators.ga.cnsga import cnsga_toolbox, pop_from_data
-from xopt import Xopt
+from GPT_tools.front_tools import load_vocs, pop_sampler
 from scipy.optimize import curve_fit
 
 def show_errors(method):
@@ -389,20 +388,9 @@ class front_gui:
         return file_list
     
     def pop_sampler(self, data, new_pop_size):
-        xopt = Xopt.from_file(self.xopt_filename)
-        xopt.strict = False    
-            
-        vocs = xopt.vocs
-        #vocs.constraints = {}  # At some point this didn't seem to work, but now it does...
-                
-        toolbox = cnsga_toolbox(vocs)
-            
-        pop = pop_from_data(data, vocs)
-        
-        pop = toolbox.select(pop, new_pop_size)
-        index_list = np.array([int(p.index) for p in pop])
-                
-        return data.iloc[index_list]  # p.index is positional; labels may repeat
+        # CNSGA (NSGA-II) best-N selection with crowding recomputed while thinning the last front; see front_tools
+        vocs, _ = load_vocs(self.xopt_filename)
+        return pop_sampler(data, vocs, new_pop_size)
     
     def next_default_color(self):
         c = self.default_color_list[0]
