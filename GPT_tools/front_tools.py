@@ -39,10 +39,11 @@ def clamp_variable_values(variable, x):
     return np.clip(x, lo, hi)
 
 
-def clamp_population(pop_filename, xopt_file, output_filename=None, seed=None, verbose=True):
+def clamp_population(xopt_file, pop_filename=None, output_filename=None, seed=None, verbose=True):
     """
     Make an existing population file consistent with an (edited) xopt file, so that it can be used as
-    generator.population_file in a new optimization:
+    generator.population_file in a new optimization. pop_filename defaults to generator.population_file in the
+    xopt file (a relative path is tried as given, then relative to the xopt file's folder).
       - variables are clamped to their new ranges (discrete variables snap to the nearest allowed value),
         and variables missing from the file get random values within their ranges
       - every constant is set to its value in the xopt file, including former variables that are now constants
@@ -54,6 +55,17 @@ def clamp_population(pop_filename, xopt_file, output_filename=None, seed=None, v
     vocs, xopt_input = load_vocs(xopt_file)
     new_pop_size = int(xopt_input['generator']['population_size'])
     rng = np.random.default_rng(seed)
+
+    if pop_filename is None:
+        pop_filename = xopt_input['generator'].get('population_file')
+        if pop_filename is None:
+            raise ValueError(f'No pop_filename given and no generator: population_file in {xopt_file}')
+        if not os.path.isfile(pop_filename) and not os.path.isabs(pop_filename):
+            beside_xopt_file = os.path.join(os.path.dirname(os.path.abspath(xopt_file)), pop_filename)
+            if os.path.isfile(beside_xopt_file):
+                pop_filename = beside_xopt_file
+    if not os.path.isfile(pop_filename):
+        raise FileNotFoundError(f'Population file not found: {pop_filename}')
 
     pop = pd.read_csv(pop_filename, index_col='xopt_index')
     n_start = len(pop)
