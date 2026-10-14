@@ -33,14 +33,16 @@ def MakeMetalParticleGroup(settings, DISTGEN_INPUT_FILE=None, verbose=True, only
 
     (EexcAtSurface, EexcAtPeak, kT) = getMetalEexc(settings, modify_settings=True, verbose=verbose)
     
+    effective_mass = _semi_mass(settings.get('effective_mass', 1.0))  # Defaults to 1.0, undocumented usage here to fake a narrow cone with a metal distribution
+    
     if (only_survivors):
-        PG = MakeMetalEnergyDist(get_cathode_particlegroup(settings, DISTGEN_INPUT_FILE=DISTGEN_INPUT_FILE), EexcAtPeak, kT, rng=rng)
+        PG = MakeMetalEnergyDist(get_cathode_particlegroup(settings, DISTGEN_INPUT_FILE=DISTGEN_INPUT_FILE), EexcAtPeak, kT, mstar_ratio=effective_mass, rng=rng)
         barrierV = EexcAtSurface - EexcAtPeak
         pz_min = 1010.93912*np.sqrt(barrierV) # goes from eV to eV/c for an electron
         PG.pz = np.sqrt(PG.pz**2 + pz_min**2) # add energy to get over barrier
         
     else:
-        PG = MakeMetalEnergyDist(get_cathode_particlegroup(settings, DISTGEN_INPUT_FILE=DISTGEN_INPUT_FILE), EexcAtSurface, kT, rng=rng)
+        PG = MakeMetalEnergyDist(get_cathode_particlegroup(settings, DISTGEN_INPUT_FILE=DISTGEN_INPUT_FILE), EexcAtSurface, kT, mstar_ratio=effective_mass, rng=rng)
     
     return PG
 
@@ -333,24 +335,73 @@ def MakeSemiconductorEnergyDist(pg, EexcAtSurface, EaSurf, rng=np.random.default
     return pg
 
 
-def MakeMetalEnergyDist(pg, EexcAtSurface, kT, rng=np.random.default_rng()):   
-    # Make energy distribution for the constant DoS model
-    #    EexcAtSurface: Excess energy at cathode surface, eV
-    #    kT: eV
+#def MakeMetalEnergyDist(pg, EexcAtSurface, kT, rng=np.random.default_rng()):   
+#    # Make energy distribution for the constant DoS model
+#    #    EexcAtSurface: Excess energy at cathode surface, eV
+#    #    kT: eV
+#
+#    pnorm = 1010.93912  # sqrt(2* (electron mass) * (1 eV)) in eV/c
+#    Ekin = invEcumul(rng.random(len(pg)).ravel(), EexcAtSurface, kT)
+#    (pr, pz) = uniform_pr2_dist(len(pg), rng=rng)
+#    pz = np.abs(pz)    
+#    pr = pr * pnorm * np.sqrt(Ekin)
+#    pz = pz * pnorm * np.sqrt(Ekin)
+#    phi = 2 * np.pi * rng.random(len(pg)).ravel()
+#    pg.pz = pz
+#    pg.px = pr * np.cos(phi)
+#    pg.py = pr * np.sin(phi)
+#    
+#    pg.weight = 1.60217663e-19
+#    
+#    return pg
 
-    pnorm = 1010.93912  # sqrt(2* (electron mass) * (1 eV)) in eV/c
-    Ekin = invEcumul(rng.random(len(pg)).ravel(), EexcAtSurface, kT)
-    (pr, pz) = uniform_pr2_dist(len(pg), rng=rng)
-    pz = np.abs(pz)    
-    pr = pr * pnorm * np.sqrt(Ekin)
-    pz = pz * pnorm * np.sqrt(Ekin)
-    phi = 2 * np.pi * rng.random(len(pg)).ravel()
-    pg.pz = pz
-    pg.px = pr * np.cos(phi)
-    pg.py = pr * np.sin(phi)
-    
+def MakeMetalEnergyDist(pg, EexcAtSurface, kT, chi_eff=0.0,
+                            mstar_ratio=1.0,
+                            rng=np.random.default_rng()):
+
+    pnorm = 1010.93912  # sqrt(2*m_e*1 eV), eV/c
+
+    Ekin = invEcumul(
+        rng.random(len(pg)).ravel(),
+        EexcAtSurface,
+        kT
+    )
+
+    if (mstar_ratio < 1.0):
+        pr, pz = lorentzian_angle_dist(
+            len(pg),
+            gamma=0.6*np.sqrt(mstar_ratio / (1-mstar_ratio)),
+            max_slope = 2,
+            rng=rng
+        )
+
+        pr *= pnorm * np.sqrt(Ekin)
+        pz *= pnorm * np.sqrt(Ekin)
+
+        phi = 2*np.pi*rng.random(len(pg))
+
+        pg.px = pr*np.cos(phi)
+        pg.py = pr*np.sin(phi)
+        pg.pz = pz
+        
+    else:
+        pr, pz = narrow_cone_pr2_dist(
+            Ekin,
+            chi_eff,
+            mstar_ratio=mstar_ratio,
+            rng=rng
+        )
+        
+        p = pnorm * np.sqrt(Ekin)
+        
+        phi = 2*np.pi*rng.random(len(pg)).ravel()
+
+        pg.px = p * pr * np.cos(phi)
+        pg.py = p * pr * np.sin(phi)
+        pg.pz = p * pz
+
     pg.weight = 1.60217663e-19
-    
+
     return pg
 
 def ImagePotential(z, z0, r0, Egun):
@@ -515,6 +566,72 @@ def uniform_pr2_dist(n, rng=None):
     pr = np.sqrt(u)
     pz = np.sqrt(1.0-u)
     return (pr,pz)
+
+def lorentzian_angle_dist(n, gamma, max_slope=None,
+                          rng=np.random.default_rng()):
+
+    if max_slope is None:
+        qx = gamma * rng.normal(size=n)
+        qy = gamma * rng.normal(size=n)
+        qz = np.abs(rng.normal(size=n))
+
+        qnorm = np.sqrt(qx**2 + qy**2 + qz**2)
+
+        pr = np.sqrt(qx**2 + qy**2) / qnorm
+        pz = qz / qnorm
+        
+    else:
+        # CDF of rho' = sqrt(x'^2 + y'^2):
+        #
+        # F(rho) = 1 - 1/sqrt(1 + (rho/gamma)**2)
+
+        Fmax = 1.0 - 1.0 / np.sqrt(
+            1.0 + (max_slope / gamma)**2
+        )
+
+        u = rng.random(n) * Fmax
+
+        rho = gamma * np.sqrt(
+            1.0 / (1.0 - u)**2 - 1.0
+        )
+
+        # rho = pr/pz, with pr^2 + pz^2 = 1
+        pz = 1.0 / np.sqrt(1.0 + rho**2)
+        pr = rho * pz
+
+    return pr, pz
+
+def narrow_cone_pr2_dist(Ekin, chi_eff, mstar_ratio=1.0,
+                         rng=np.random.default_rng()):
+    Ekin = np.asarray(Ekin)
+
+    # Internal Gamma-valley kinetic energy
+    E_internal = Ekin + chi_eff
+
+    if np.any(E_internal < 0):
+        raise ValueError(
+            "Some sampled vacuum energies imply negative internal kinetic energy"
+        )
+
+    umax = np.ones_like(Ekin)
+
+    positive = Ekin > 0
+    umax[positive] = np.minimum(
+        1.0,
+        mstar_ratio * E_internal[positive] / Ekin[positive]
+    )
+
+    # Exact K=0 limit:
+    # for chi_eff > 0, umax -> 1
+    # (K=0 is measure zero anyway)
+    umax = np.clip(umax, 0.0, 1.0)
+
+    # old
+    u = rng.random(len(Ekin)) * umax
+    pr = np.sqrt(u)
+    pz = np.sqrt(1.0 - u)
+    
+    return pr, pz
 
 def _semi_support(Eexc, Ea):
     """
