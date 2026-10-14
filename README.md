@@ -45,8 +45,10 @@ pip install -e .
 The plots and GUIs are interactive [`ipympl`](https://matplotlib.org/ipympl/) widgets, meant for JupyterLab. Run `%matplotlib widget` once at the top of each notebook (see the quick start).
 
 > **Plots intermittently blank?** If plots sometimes don't appear, or only appear after scrolling over them or using *Kernel → Reconnect to Kernel*, change two JupyterLab settings (*Settings → Settings Editor*), then restart the kernel and reload the page:
-> - turn **off** *Kernel comms over subshells*. This is the likely culprit: with `ipykernel` 7, widget messages sent over subshells can race and get lost;
-> - set the notebook **Windowing mode** to `none`. Changing this alone did not fix it, but the two together did.
+> - Turn **off** "Kernels" -> *Kernel comms over subshells*. This is the likely culprit: with `ipykernel` 7, widget messages sent over subshells can race and get lost;
+> - Set "Notebook" -> **Windowing mode** to `none`. 
+
+This problem was introduced in a recent Jupyterlab / python version and has been a long-standing bug in ipympl that has not been fixed.
 
 ## Quick start
 
