@@ -21,13 +21,49 @@ def warn_unrecognized_params(params, allowed, function_name):
         print(f"{function_name}: unrecognized parameter(s): {', '.join(unrecognized)} (check for typos, they are being ignored)")
 
 
+# Figures made by make_default_plot, grouped by the notebook cell that made them. pyplot and ipywidgets keep every
+# figure alive until it is closed, so without this each re-run of a plotting cell leaks its previous figures.
+# When a cell runs again its old output has already been cleared, so its figures from earlier runs are closed then
+# (as are figures from deleted cells). Front-ends that send no cell id (and widget callbacks) are left alone.
+_figures_by_cell = {}
+
+def _current_cell_info():
+    try:
+        from IPython import get_ipython
+        ip = get_ipython()
+        parent = ip.kernel.get_parent() if hasattr(ip.kernel, 'get_parent') else ip.parent_header
+        metadata = parent.get('metadata', {}) or {}
+        return metadata.get('cellId'), parent.get('header', {}).get('msg_id'), metadata.get('deletedCells', []) or []
+    except Exception:
+        return None, None, []
+
+def _close_figures(figs):
+    for f in figs:
+        plt.close(f)  # with ipympl this also closes the canvas widget
+
+def _track_figure_by_cell(fig):
+    cell_id, msg_id, deleted_cells = _current_cell_info()
+    for c in deleted_cells:
+        _close_figures(_figures_by_cell.pop(c, {}).get('figs', []))
+    if (cell_id is None or msg_id is None):
+        return
+    entry = _figures_by_cell.get(cell_id)
+    if (entry is not None and entry['msg_id'] != msg_id):
+        _close_figures(entry['figs'])  # figures from this cell's previous run
+        entry = None
+    if (entry is None):
+        entry = _figures_by_cell[cell_id] = {'msg_id': msg_id, 'figs': []}
+    entry['figs'].append(fig)
+
+
 def make_default_plot(plot_width=700, plot_height=400, dpi = 120, is_table=False, **params):
-    
+
     plot_layout = 'constrained'  # constrained, tight
-    
+
     plt.ioff() # turn off interactive mode so figure doesn't show
     fig, ax = plt.subplots(layout=plot_layout, dpi=dpi, figsize=[plot_width/dpi, plot_height/dpi])
-    plt.ion() 
+    plt.ion()
+    _track_figure_by_cell(fig)
 
     #fig.frameonbool = False
     fig.canvas.toolbar_position = 'right'
