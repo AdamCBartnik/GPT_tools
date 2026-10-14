@@ -38,11 +38,22 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-> **Note:** the code currently imports `ParticleGroup` via `from beamphysics import ...`. The published package is [`pmd-beamphysics`](https://pypi.org/project/pmd-beamphysics/) (import name `pmd_beamphysics`) — `beamphysics` may be an older/internal name from before a refactor. `requirements.txt` lists the real PyPI package; if `import beamphysics` fails for you, that's a pre-existing naming mismatch in this repo, not a problem with your install.
+> **Note:** `ParticleGroup` comes from [`openpmd-beamphysics`](https://pypi.org/project/openpmd-beamphysics/), imported as `beamphysics` (the current import name; the older `pmd_beamphysics` name still works but is deprecated).
+
+### Jupyter plotting
+
+The plots and GUIs are interactive [`ipympl`](https://matplotlib.org/ipympl/) widgets, meant for JupyterLab. Run `%matplotlib widget` once at the top of each notebook (see the quick start).
+
+> **Plots intermittently blank?** If plots sometimes don't appear, or only appear after scrolling over them or using *Kernel → Reconnect to Kernel*, change two JupyterLab settings (*Settings → Settings Editor*), then restart the kernel and reload the page:
+> - turn **off** *Kernel comms over subshells*. This is the likely culprit: with `ipykernel` 7, widget messages sent over subshells can race and get lost;
+> - set the notebook **Windowing mode** to `none`. Changing this alone did not fix it, but the two together did.
 
 ## Quick start
 
 ```python
+%matplotlib widget
+# interactive ipympl plots; run once per notebook, before any plotting
+
 from gpt import GPT
 from GPT_tools.GPTExtension import run_gpt_with_settings
 from GPT_tools.gpt_plot import gpt_plot, gpt_plot_dist1d, gpt_plot_dist2d

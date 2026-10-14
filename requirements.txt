@@ -3,6 +3,7 @@ scipy
 matplotlib
 pandas
 ipywidgets
+ipympl
 pyyaml
 pint
 sympy
