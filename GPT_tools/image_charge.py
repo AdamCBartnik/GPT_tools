@@ -33,17 +33,29 @@ def MakeMetalParticleGroup(settings, DISTGEN_INPUT_FILE=None, verbose=True, only
 
     (EexcAtSurface, EexcAtPeak, kT) = getMetalEexc(settings, modify_settings=True, verbose=verbose)
     
+    chi_eff = getValueFromSettings(settings, 'electron_affinity', 'eV', modify_settings=False, verbose=verbose)
     effective_mass = _semi_mass(settings.get('effective_mass', 1.0))  # Defaults to 1.0, undocumented usage here to fake a narrow cone with a metal distribution
-    
-    if (only_survivors):
-        PG = MakeMetalEnergyDist(get_cathode_particlegroup(settings, DISTGEN_INPUT_FILE=DISTGEN_INPUT_FILE), EexcAtPeak, kT, mstar_ratio=effective_mass, rng=rng)
+    if (effective_mass < 1.0):
+        # Hack metal code
+               
+        PG = MakeMetalEnergyDist(get_cathode_particlegroup(settings, DISTGEN_INPUT_FILE=DISTGEN_INPUT_FILE), EexcAtPeak, kT, mstar_ratio=effective_mass, chi_eff=0.0, rng=rng)
         barrierV = EexcAtSurface - EexcAtPeak
-        pz_min = 1010.93912*np.sqrt(barrierV) # goes from eV to eV/c for an electron
-        PG.pz = np.sqrt(PG.pz**2 + pz_min**2) # add energy to get over barrier
+        pz_min = 1010.93912*np.sqrt(np.max([0.0, chi_eff])) # goes from eV to eV/c for an electron
+        PG = PG[PG.pz > pz_min]
+        PG.pz = np.sqrt(PG.pz**2 - (1010.93912)**2 * chi_eff) # add or subtract energy from barrier
         
     else:
-        PG = MakeMetalEnergyDist(get_cathode_particlegroup(settings, DISTGEN_INPUT_FILE=DISTGEN_INPUT_FILE), EexcAtSurface, kT, mstar_ratio=effective_mass, rng=rng)
-    
+        # Normal metal code
+
+        if (only_survivors):
+            PG = MakeMetalEnergyDist(get_cathode_particlegroup(settings, DISTGEN_INPUT_FILE=DISTGEN_INPUT_FILE), EexcAtPeak, kT, mstar_ratio=1.0, chi_eff=0.0, rng=rng)
+            barrierV = EexcAtSurface - EexcAtPeak
+            pz_min = 1010.93912*np.sqrt(barrierV) # goes from eV to eV/c for an electron
+            PG.pz = np.sqrt(PG.pz**2 + pz_min**2) # add energy to get over barrier
+            
+        else:
+            PG = MakeMetalEnergyDist(get_cathode_particlegroup(settings, DISTGEN_INPUT_FILE=DISTGEN_INPUT_FILE), EexcAtSurface, kT, mstar_ratio=1.0, chi_eff=0.0, rng=rng)
+        
     return PG
 
 
@@ -367,7 +379,7 @@ def MakeMetalEnergyDist(pg, EexcAtSurface, kT, chi_eff=0.0,
         kT
     )
 
-    if (mstar_ratio < 1.0):
+    if (mstar_ratio < 0.0):
         pr, pz = lorentzian_angle_dist(
             len(pg),
             gamma=0.6*np.sqrt(mstar_ratio / (1-mstar_ratio)),
